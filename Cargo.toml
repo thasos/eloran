@@ -4,3 +4,30 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+axum = "0.6"
+horrorshow = "0.8.4"
+http = "0.2.8"
+body = "0.1.1"
+[dependencies.axum-login]
+version = "0.4"
+features = ["sqlite"]
+[dependencies.rand]
+version = "0.8"
+features = ["min_const_gen"]
+[dependencies.sqlx]
+version = "0.6"
+default-features = false
+features = ["runtime-tokio-rustls", "sqlite"]
+[dependencies.tokio]
+version = "1.24"
+features = ["full"]
+
+[dev-dependencies]
+axum-test-helper = { version = "0.*" }
+
+[profile.release]
+panic = 'abort' # No unwinding on panic
+strip = true  # Automatically strip symbols from the binary.
+opt-level = "s"  # Optimize for size.
+lto = true
+codegen-units = 1
