@@ -72,7 +72,7 @@ async fn create_sqlite_pool() -> sqlx::pool::PoolConnection<sqlx::Sqlite> {
 }
 
 async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse {
-    println!("get /login : {}", &body);
+    info!("get /login : {}", &body);
     let (username, password) = parse_credentials(&body);
 
     // connect to db
@@ -89,7 +89,7 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
     {
         Ok(s) => s,
         Err(_) => {
-            println!("{} not found", &username);
+            info!("{} not found", &username);
             // TODO pas d'exit...
             process::exit(1);
         }
@@ -107,7 +107,7 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
 async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
     // dbg!("Logging out user: {}", &auth.current_user);
     // auth.logout().await;
-    println!("get /logout : {:?}", &auth.current_user);
+    info!("get /logout : {:?}", &auth.current_user);
     auth.logout().await;
     Html(html_render::render({
         match &auth.current_user {
@@ -118,12 +118,12 @@ async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
 }
 
 async fn library_handler(Extension(user): Extension<User>) -> impl IntoResponse {
-    println!("get /library : {user:?}");
+    info!("get /library : {user:?}");
     Html(format!("Logged in as: {}, role {:?}", user.name, user.role))
 }
 
 async fn admin_handler(Extension(user): Extension<User>) -> impl IntoResponse {
-    println!("get /admin : {user:?}");
+    info!("get /admin : {user:?}");
     Html(format!(
         "Logged in as admin: {}, role {:?}",
         user.name, user.role
@@ -131,7 +131,7 @@ async fn admin_handler(Extension(user): Extension<User>) -> impl IntoResponse {
 }
 
 async fn get_root(Extension(user): Extension<Option<User>>) -> impl IntoResponse {
-    println!("get / : as {user:?}");
+    info!("get / : as {user:?}");
     Html(html_render::render({
         match user {
             Some(user) => (Page::Root, Some(user.name)),
