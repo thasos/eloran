@@ -1,6 +1,9 @@
-use crate::html_render;
+use crate::html_render::{self, login_ok};
+use axum::http::header;
+use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse};
 use axum::{
+    extract::Path,
     routing::{get, post},
     Extension, Router,
 };
@@ -9,20 +12,20 @@ use axum_login::{
     secrecy::SecretVec,
     AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
 };
-use html_render::Page;
 use rand::Rng;
 use sqlx::sqlite::SqlitePoolOptions;
+use std::fs;
 use std::io::Error;
 use std::process;
 
 // User Struct
 // TODO virer Default ?
 #[derive(Debug, Default, Clone, sqlx::FromRow)]
-struct User {
-    id: i64,
-    password_hash: String,
-    name: String,
-    role: Role,
+pub struct User {
+    pub id: i64,
+    pub password_hash: String,
+    pub name: String,
+    pub role: Role,
 }
 impl AuthUser<Role> for User {
     fn get_id(&self) -> String {
@@ -98,23 +101,23 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
     auth.login(&user).await.unwrap();
 
     // TODO : vraie page
-    Html(format!(
-        "Successfully logged in as: {}, role {:?}",
-        user.name, user.role
-    ))
+    Html(login_ok(&user))
 }
 
 async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
-    // dbg!("Logging out user: {}", &auth.current_user);
-    // auth.logout().await;
     info!("get /logout : {:?}", &auth.current_user);
     auth.logout().await;
-    Html(html_render::render({
-        match &auth.current_user {
-            Some(user) => (Page::Logout, Some(user.name.clone())),
-            None => (Page::BiffTheUnderstudy, None),
+    let toto = match &auth.current_user {
+        Some(user) => {
+            debug!("user found, logout");
+            Html(html_render::logout(user))
         }
-    }))
+        None => {
+            warn!("no user found, can't logout !");
+            Html("Err".to_string())
+        }
+    };
+    toto
 }
 
 async fn library_handler(Extension(user): Extension<User>) -> impl IntoResponse {
@@ -132,12 +135,27 @@ async fn admin_handler(Extension(user): Extension<User>) -> impl IntoResponse {
 
 async fn get_root(Extension(user): Extension<Option<User>>) -> impl IntoResponse {
     info!("get / : as {user:?}");
-    Html(html_render::render({
-        match user {
-            Some(user) => (Page::Root, Some(user.name)),
-            None => (Page::Login, None),
+    match user {
+        Some(user) => {
+            debug!("user found");
+            Html(html_render::homepage(&user))
         }
-    }))
+        None => {
+            debug!("no user found, login form");
+            Html(html_render::login_form())
+        }
+    }
+}
+
+async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
+    info!("get /css/{}", path);
+    // TODO include_bytes pour la base ? (cf monit-agregator)
+    let css_file_content = fs::read_to_string(format!("src/css/{}", path));
+    // TODO tests content pour 200 ?
+    match css_file_content {
+        Ok(css) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], css).into_response(),
+        Err(_) => (StatusCode::NOT_FOUND, "css not found").into_response(),
+    }
 }
 
 async fn create_router() -> Router {
@@ -169,6 +187,7 @@ async fn create_router() -> Router {
         ))
         // 🔥 UNPROTECTED 🔥
         .route("/", get(get_root))
+        .route("/css/*path", get(get_css))
         .route("/login", post(login_handler))
         .route("/logout", get(logout_handler))
         .layer(auth_layer)
@@ -195,13 +214,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_login_logout() {
+        // headers
+        let headers = "<!DOCTYPE html><html><head><title>Eloran</title><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width\"><link rel=\"stylesheet\" href=\"css/w3.css\"><link rel=\"stylesheet\" href=\"css/w3-theme-dark-grey.css\"><meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\"><meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\"></head><body class=\"w3-theme-dark\">";
         // create router
         let router = create_router();
         // root without auth
         let client = TestClient::new(router.await);
         let res = client.get("/").send().await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.text().await, "<!DOCTYPE html><html><head><title>Eloran</title></head><body><h2 id=\"heading\">Welcome to Eloran</h2><p>Please login :</p><p><form action=\"/login\" method=\"post\"><input type=\"text\" name=\"user\" placeholder=\"username\" required><br><input type=\"password\" name=\"password\" placeholder=\"password\" required><br><input type=\"submit\" value=\"Login\"></form></p></body></html>");
+        assert_eq!(res.text().await, format!("{}<h2 id=\"heading\">Welcome to Eloran</h2><p>Please login :</p><p><form action=\"/login\" method=\"post\"><input type=\"text\" name=\"user\" placeholder=\"username\" required><br><input type=\"password\" name=\"password\" placeholder=\"password\" required><br><input type=\"submit\" value=\"Login\"></form></p></body></html>", headers));
         // login
         let res = client
             .post("/login")
@@ -218,20 +239,28 @@ mod tests {
         };
         assert_eq!(
             res.text().await,
-            "Successfully logged in as: admin, role Admin"
-        );
+            format!("{}<h2 id=\"heading\">Welcome to Eloran</h2><p>Successfully logged in as: admin, role Admin</p><p><a href=\"/\">return home</a></p></body></html>", headers));
         // root with auth
         let res = client.get("/").header("Cookie", &cookie).send().await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.text().await, "<!DOCTYPE html><html><head><title>Eloran</title></head><body><h2 id=\"heading\">Welcome to Eloran</h2><p>Logged in as: admin</p></body></html>");
+        assert_eq!(res.text().await, format!("{}<h2 id=\"heading\">Welcome to Eloran</h2><p>Logged in as: admin, role Admin</p><div id=\"menu\"><p><a href=\"/library\">library</a></p><p><a href=\"/prefs\">preferences</a></p><p><a href=\"/logout\">logout</a></p></div></body></html>", headers));
         // logout
         let res = client.get("/logout").header("Cookie", &cookie).send().await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.text().await, "<!DOCTYPE html><html><head><title>Eloran</title></head><body><h2 id=\"heading\">Welcome to Eloran</h2><p>Bye admin</p></body></html>");
+        assert_eq!(res.text().await, format!("{}<h2 id=\"heading\">Welcome to Eloran</h2><p>Bye admin</p><p><a href=\"/\">return home</a></p></body></html>", headers));
         // root without auth
         let res = client.get("/").header("Cookie", &cookie).send().await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.text().await, "<!DOCTYPE html><html><head><title>Eloran</title></head><body><h2 id=\"heading\">Welcome to Eloran</h2><p>Please login :</p><p><form action=\"/login\" method=\"post\"><input type=\"text\" name=\"user\" placeholder=\"username\" required><br><input type=\"password\" name=\"password\" placeholder=\"password\" required><br><input type=\"submit\" value=\"Login\"></form></p></body></html>");
+        assert_eq!(res.text().await, format!("{}<h2 id=\"heading\">Welcome to Eloran</h2><p>Please login :</p><p><form action=\"/login\" method=\"post\"><input type=\"text\" name=\"user\" placeholder=\"username\" required><br><input type=\"password\" name=\"password\" placeholder=\"password\" required><br><input type=\"submit\" value=\"Login\"></form></p></body></html>", headers));
+        // css error
+        let res = client.get("/css/toto").send().await;
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
+        let res = client.get("/css/w3.css").send().await;
+        let res_headers = match res.headers().get("content-type") {
+            Some(header) => header,
+            None => panic!(),
+        };
+        assert_eq!(res_headers, "text/css");
     }
 }
 
