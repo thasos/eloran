@@ -1,4 +1,5 @@
 use crate::http_server::User;
+use crate::scanner::FileInfo;
 use horrorshow::{helper::doctype, Template};
 
 fn header<'a>() -> Box<dyn horrorshow::RenderBox + 'a> {
@@ -33,6 +34,7 @@ pub fn login_form() -> String {
     render(body_content)
 }
 
+// TODO auto return home (redirect ?)
 pub fn login_ok(user: &User) -> String {
     debug!("fn login ok");
     // TODO moche
@@ -45,6 +47,7 @@ pub fn login_ok(user: &User) -> String {
     render(body_content)
 }
 
+// TODO auto return home (redirect ?)
 pub fn logout(user: &User) -> String {
     debug!("fn logout");
     // TODO moche
@@ -57,19 +60,53 @@ pub fn logout(user: &User) -> String {
     render(body_content)
 }
 
-pub fn homepage(user: &User) -> String {
+pub fn library(user: &User, publiation_list: Vec<FileInfo>) -> String {
     debug!("fn homepage");
-    // TODO moche
-    let user = user.clone();
+    // TODO moche (obligé le clone  ?)
+    let menu = menu(user.clone());
     let body_content = box_html! {
-        p { : format!("Logged in as: {}, role {:?}", user.name.as_str(), &user.role) }
-        div(id="menu") {
-        p { a(href="/library") : "library" }
-        p { a(href="/prefs") : "preferences" }
-        p { a(href="/logout") : "logout" }
+        : menu;
+        div(id="library-content") {
+            p {
+                : "Library list";
+            }
+            ol(id="publiations") {
+                @ for publiation in publiation_list {
+                    li {
+                        : format_args!("{}", publiation.filename)
+                    }
+                }
+            }
+
         }
     };
+    render(body_content)
+}
 
+fn menu<'a>(user: User) -> Box<dyn horrorshow::RenderBox + 'a> {
+    debug!("fn menu");
+    // TODO sur 1 ligne...
+    let menu_content = box_html! {
+        div(id="menu") {
+            p { : format!("Logged in as: {}, role {:?}", user.name.as_str(), &user.role) }
+            p { a(href="/library") : "library" }
+            p { a(href="/prefs") : "preferences" }
+            p { a(href="/logout") : "logout" }
+        }
+    };
+    menu_content
+}
+
+pub fn homepage(user: &User) -> String {
+    debug!("fn homepage");
+    // TODO moche (obligé le clone  ?)
+    let menu = menu(user.clone());
+    let body_content = box_html! {
+        : menu;
+        div(id="home-content") {
+        : "content"
+        }
+    };
     render(body_content)
 }
 

@@ -10,6 +10,10 @@ http = "0.2.8"
 body = "0.1.1"
 env_logger = "0.10.0"
 log = "0.4.17"
+# need tower for redirect when not logged in
+tower = "0.4.13"
+ulid = "1.0.0"
+jwalk = "0.8.1"
 [dependencies.axum-login]
 version = "0.4"
 features = ["sqlite"]

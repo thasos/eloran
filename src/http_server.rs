@@ -1,7 +1,9 @@
 use crate::html_render::{self, login_ok};
+use crate::scanner::FileInfo;
+use crate::sqlite;
 use axum::http::header;
 use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::{
     extract::Path,
     routing::{get, post},
@@ -13,10 +15,9 @@ use axum_login::{
     AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
 };
 use rand::Rng;
-use sqlx::sqlite::SqlitePoolOptions;
 use std::fs;
 use std::io::Error;
-use std::process;
+use tower::ServiceBuilder;
 
 // User Struct
 // TODO virer Default ?
@@ -64,44 +65,35 @@ fn parse_credentials(body: &str) -> (String, String) {
     (username, password)
 }
 
-async fn create_sqlite_pool() -> sqlx::pool::PoolConnection<sqlx::Sqlite> {
-    let pool = SqlitePoolOptions::new()
-        // TODO db path in conf
-        .connect("sqlite/user_store.db")
-        .await
-        .unwrap();
-    let conn = pool.acquire().await.unwrap();
-    conn
-}
-
 async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse {
     info!("get /login : {}", &body);
     let (username, password) = parse_credentials(&body);
 
     // connect to db
-    let mut conn = create_sqlite_pool().await;
+    let mut conn = sqlite::create_sqlite_connection().await;
 
     // get user from db
     // TODO hash password
-    let user: User = match sqlx::query_as(&format!(
-        "SELECT * FROM users WHERE name = '{}' AND password_hash = '{}'",
-        &username, &password
-    ))
-    .fetch_one(&mut conn)
-    .await
-    {
-        Ok(s) => s,
-        Err(_) => {
-            info!("{} not found", &username);
-            // TODO pas d'exit...
-            process::exit(1);
-        }
-    };
-    // TODO if password match
-    auth.login(&user).await.unwrap();
-
-    // TODO : vraie page
-    Html(login_ok(&user))
+    Html(
+        match sqlx::query_as(&format!(
+            "SELECT * FROM users WHERE name = '{}' AND password_hash = '{}'",
+            &username, &password
+        ))
+        .fetch_one(&mut conn)
+        .await
+        {
+            Ok(user) => {
+                // TODO check if password match
+                auth.login(&user).await.unwrap();
+                login_ok(&user)
+            }
+            Err(_) => {
+                warn!("user {} not found", &username);
+                // TODO : vraie page
+                "user not found".to_string()
+            }
+        },
+    )
 }
 
 async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
@@ -122,7 +114,22 @@ async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
 
 async fn library_handler(Extension(user): Extension<User>) -> impl IntoResponse {
     info!("get /library : {user:?}");
-    Html(format!("Logged in as: {}, role {:?}", user.name, user.role))
+
+    // retrieve books list
+    let mut conn = sqlite::create_sqlite_connection().await;
+    // TODO set limit in conf
+    let publication_list: Vec<FileInfo> = match sqlx::query_as("SELECT * FROM library LIMIT 20")
+        .fetch_all(&mut conn)
+        .await
+    {
+        Ok(publication_list) => publication_list,
+        Err(e) => {
+            warn!("empty library : {}", e);
+            let empty_list: Vec<FileInfo> = Vec::new();
+            empty_list
+        }
+    };
+    Html(html_render::library(&user, publication_list))
 }
 
 async fn admin_handler(Extension(user): Extension<User>) -> impl IntoResponse {
@@ -166,22 +173,17 @@ async fn create_router() -> Router {
     // https://docs.rs/axum-sessions/0.4.1/axum_sessions/struct.SessionLayer.html#implementations
     let session_layer = SessionLayer::new(session_store, &secret).with_secure(false);
     // TODO use fn create_sqlite_pool
-    let pool = SqlitePoolOptions::new()
-        .connect("sqlite/user_store.db")
-        .await
-        .unwrap();
+    let pool = sqlite::create_sqlite_pool().await;
     let user_store = SqliteStore::<User, Role>::new(pool);
     let auth_layer = AuthLayer::new(user_store, &secret);
 
     Router::new()
         // 🔒 protected 🔒
         .route("/admin", get(admin_handler))
-        // .route_layer(RequireAuthorizationLayer::<User>::login())
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::Admin..,
         ))
         .route("/library", get(library_handler))
-        // .route_layer(RequireAuthorizationLayer::<User>::login())
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::User..,
         ))
@@ -190,14 +192,27 @@ async fn create_router() -> Router {
         .route("/css/*path", get(get_css))
         .route("/login", post(login_handler))
         .route("/logout", get(logout_handler))
-        .layer(auth_layer)
-        .layer(session_layer)
+        // layers for redirect when not logged
+        // see https://github.com/maxcountryman/axum-login/issues/22#issuecomment-1345403733
+        .layer(
+            ServiceBuilder::new()
+                .layer(session_layer)
+                .layer(auth_layer)
+                .map_response(|r: Response| {
+                    if r.status() == StatusCode::UNAUTHORIZED {
+                        Redirect::to("/").into_response()
+                    } else {
+                        r
+                    }
+                }),
+        )
 }
 
-#[tokio::main]
 pub async fn start_http_server() -> Result<(), Error> {
     let router = create_router();
 
+    // TODO check si server bien started
+    info!("(FAKE) http server started on 0.0.0.0:3000 (FAKE)");
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
         .serve(router.await.into_make_service())
         .await
@@ -243,7 +258,7 @@ mod tests {
         // root with auth
         let res = client.get("/").header("Cookie", &cookie).send().await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.text().await, format!("{}<h2 id=\"heading\">Welcome to Eloran</h2><p>Logged in as: admin, role Admin</p><div id=\"menu\"><p><a href=\"/library\">library</a></p><p><a href=\"/prefs\">preferences</a></p><p><a href=\"/logout\">logout</a></p></div></body></html>", headers));
+        assert_eq!(res.text().await, format!("{}<h2 id=\"heading\">Welcome to Eloran</h2><div id=\"menu\"><p>Logged in as: admin, role Admin</p><p><a href=\"/library\">library</a></p><p><a href=\"/prefs\">preferences</a></p><p><a href=\"/logout\">logout</a></p></div><div id=\"home-content\">content</div></body></html>", headers));
         // logout
         let res = client.get("/logout").header("Cookie", &cookie).send().await;
         assert_eq!(res.status(), StatusCode::OK);

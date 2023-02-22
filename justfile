@@ -21,4 +21,4 @@ clean:
 
 # TODO select user...
 check_db:
-    ls ./sqlite/user_store.db
+    ls ./sqlite/eloran.db
