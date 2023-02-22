@@ -143,8 +143,6 @@ pub async fn scan_routine() {
                         insert_new_file(&file_infos).await;
                     } else {
                         debug!("file {} already present in db, skipping", filename);
-                        // TODO debug à virer
-                        // insert_new_file(&file_infos).await;
                     }
                 }
             }
