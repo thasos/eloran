@@ -23,6 +23,7 @@ use tower::ServiceBuilder;
 // TODO virer Default ?
 #[derive(Debug, Default, Clone, sqlx::FromRow)]
 pub struct User {
+    // TODO ulid ?
     pub id: i64,
     pub password_hash: String,
     pub name: String,
