@@ -26,6 +26,10 @@ CREATE TABLE core (
   last_successfull_scan_date INTEGER NOT NULL DEFAULT 0,
   last_successfull_extract_date INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE covers (
+  id ULID PRIMARY KEY NOT NULL,
+  cover BLOB DEFAULT NULL
+);
 ```
 
 u64 for a timestamp : year 33658...

@@ -345,6 +345,9 @@ pub async fn scan_routine() {
                 Err(e) => debug!("last_successfull_scan_date update failed : {e}"),
             };
 
+            // launch extractor
+            // file_extractor_routine().await;
+
             // TODO true schedule, last scan status in db...
             let sleep_time = Duration::from_secs(5);
             debug!(
@@ -358,12 +361,77 @@ pub async fn scan_routine() {
 
 /// extract images and metadatas form files
 /// based on file list generated with scan_routine fn
-pub async fn _file_extractor_routine() {
-    debug!("try to start file extractor routine");
+async fn file_extractor_routine() {
+    info!("start file extractor routine");
+    // create pool connexion
+    let mut conn = sqlite::create_sqlite_connection().await;
     loop {
-        debug!("file extractor loop");
+        // create file list from database
+        let file_to_scan: Vec<FileInfo> =
+            match sqlx::query_as("SELECT * FROM library WHERE scan_me = '1';")
+                .fetch_all(&mut conn)
+                .await
+            {
+                Ok(file_found) => file_found,
+                Err(e) => {
+                    error!("unable to retrieve file infos from database : {}", e);
+                    vec![]
+                }
+            };
+        if file_to_scan.is_empty() {
+            info!("no need to extract info from files");
+        } else {
+            // TODO multi threads ?
+            for file in file_to_scan {
+                debug!(
+                    "need to extract infos from file {}/{}",
+                    file.parent_path, file.filename
+                );
+                // insert covert in blob
+                // TODO true cover
+                let toto = "blooooooooooooob";
+                match sqlx::query(&format!(
+                    "INSERT OR REPLACE INTO covers (id, cover)
+                    VALUES ('{}', '{}');",
+                    file.id, toto
+                ))
+                .execute(&mut conn)
+                .await
+                {
+                    Ok(_) => {
+                        debug!(
+                            "cover updated for file {}/{}",
+                            file.parent_path, file.filename
+                        );
+                        // if covert insert ok, set scan_me to 0
+                        match sqlx::query(&format!(
+                            "UPDATE library SET scan_me = '0' WHERE id = '{}';",
+                            file.id
+                        ))
+                        .execute(&mut conn)
+                        .await
+                        {
+                            Ok(_) => (),
+                            Err(e) => debug!(
+                                "failed to update scan_me flag for file {}/{} : {e}",
+                                file.parent_path, file.filename
+                            ),
+                        }
+                    }
+                    Err(e) => debug!(
+                        "failed to update covers for file {}/{} : {e}",
+                        file.parent_path, file.filename
+                    ),
+                };
+            }
+        }
+
         // TODO true schedule, last scan status in db...
         let sleep_time = Duration::from_secs(3);
+        debug!(
+            "stop exctracting, sleeping for {} seconds",
+            sleep_time.as_secs()
+        );
         tokio::time::sleep(sleep_time).await;
     }
 }
