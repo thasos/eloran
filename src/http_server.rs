@@ -15,6 +15,7 @@ use axum_login::{
     AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
 };
 use rand::Rng;
+use sqlx::SqlitePool;
 use std::fs;
 use std::io::Error;
 use tower::ServiceBuilder;
@@ -71,7 +72,7 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
     let (username, password) = parse_credentials(&body);
 
     // connect to db
-    let mut conn = sqlite::create_sqlite_connection().await;
+    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
 
     // get user from db
     // TODO hash password
@@ -80,7 +81,7 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
             "SELECT * FROM users WHERE name = '{}' AND password_hash = '{}'",
             &username, &password
         ))
-        .fetch_one(&mut conn)
+        .fetch_one(&conn)
         .await
         {
             Ok(user) => {
@@ -100,7 +101,7 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
 async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
     info!("get /logout : {:?}", &auth.current_user);
     auth.logout().await;
-    let toto = match &auth.current_user {
+    match &auth.current_user {
         Some(user) => {
             debug!("user found, logout");
             Html(html_render::logout(user))
@@ -109,18 +110,17 @@ async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
             warn!("no user found, can't logout !");
             Html("Err".to_string())
         }
-    };
-    toto
+    }
 }
 
 async fn library_handler(Extension(user): Extension<User>) -> impl IntoResponse {
     info!("get /library : {user:?}");
 
     // retrieve books list
-    let mut conn = sqlite::create_sqlite_connection().await;
+    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
     // TODO set limit in conf
     let publication_list: Vec<FileInfo> = match sqlx::query_as("SELECT * FROM library LIMIT 20")
-        .fetch_all(&mut conn)
+        .fetch_all(&conn)
         .await
     {
         Ok(publication_list) => publication_list,
@@ -158,7 +158,7 @@ async fn get_root(Extension(user): Extension<Option<User>>) -> impl IntoResponse
 async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
     info!("get /css/{}", path);
     // TODO include_bytes pour la base ? (cf monit-agregator)
-    let css_file_content = fs::read_to_string(format!("src/css/{}", path));
+    let css_file_content = fs::read_to_string(format!("src/css/{path}"));
     // TODO tests content pour 200 ?
     match css_file_content {
         Ok(css) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], css).into_response(),
@@ -227,11 +227,17 @@ mod tests {
     use super::*;
     use axum::http::StatusCode;
     use axum_test_helper::TestClient;
+    use sqlx::{migrate::MigrateDatabase, Sqlite};
+
+    const DB_URL: &str = "sqlite://sqlite/eloran.db";
 
     #[tokio::test]
     async fn test_login_logout() {
+        // init db
+        sqlite::init_database().await;
+        sqlite::init_users(DB_URL).await;
         // headers
-        let headers = "<!DOCTYPE html><html><head><title>Eloran</title><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width\"><link rel=\"stylesheet\" href=\"css/w3.css\"><link rel=\"stylesheet\" href=\"css/w3-theme-dark-grey.css\"><meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\"><meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\"></head><body class=\"w3-theme-dark\">";
+        let headers = "<!DOCTYPE html><html><head><title>Eloran</title><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width\"><link rel=\"stylesheet\" href=\"css/w3.css\"><link rel=\"stylesheet\" href=\"css/gallery.css\"><link rel=\"stylesheet\" href=\"css/w3-theme-dark-grey.css\"><meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\"><meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\"></head><body class=\"w3-theme-dark\">";
         // create router
         let router = create_router();
         // root without auth
@@ -277,13 +283,15 @@ mod tests {
             None => panic!(),
         };
         assert_eq!(res_headers, "text/css");
+        // delete database
+        Sqlite::drop_database(crate::DB_URL);
     }
-}
 
-#[test]
-fn parse_user_password_test() {
-    let body = String::from("user=myuser&password=mypass");
-    let (user, password) = parse_credentials(&body);
-    assert_eq!(user, String::from("myuser"));
-    assert_eq!(password, String::from("mypass"));
+    #[test]
+    fn parse_user_password_test() {
+        let body = String::from("user=myuser&password=mypass");
+        let (user, password) = parse_credentials(&body);
+        assert_eq!(user, String::from("myuser"));
+        assert_eq!(password, String::from("mypass"));
+    }
 }

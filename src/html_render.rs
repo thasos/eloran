@@ -9,6 +9,7 @@ fn header<'a>() -> Box<dyn horrorshow::RenderBox + 'a> {
         meta(charset="UTF-8");
         meta(name="viewport", content="width=device-width");
         link(rel="stylesheet", href="css/w3.css");
+        link(rel="stylesheet", href="css/gallery.css");
         link(rel="stylesheet", href="css/w3-theme-dark-grey.css");
         meta(http-equiv="Cache-Control", content="no-cache, no-store, must-revalidate");
         meta(http-equiv="Pragma", content="no-cache");
@@ -60,7 +61,7 @@ pub fn logout(user: &User) -> String {
     render(body_content)
 }
 
-pub fn library(user: &User, publiation_list: Vec<FileInfo>) -> String {
+pub fn library(user: &User, publication_list: Vec<FileInfo>) -> String {
     debug!("fn homepage");
     // TODO moche (obligé le clone  ?)
     let menu = menu(user.clone());
@@ -70,14 +71,35 @@ pub fn library(user: &User, publiation_list: Vec<FileInfo>) -> String {
             p {
                 : "Library list";
             }
-            ol(id="publiations") {
-                @ for publiation in publiation_list {
-                    li {
-                        : format_args!("{}", publiation.filename)
-                    }
+            // list naze
+            // ul(id="publiations") {
+            //     @ for publiation in &publication_list {
+            //         li {
+            //             : format_args!("{}/{}",publiation.parent_path ,publiation.filename)
+            //         }
+            //     }
+            // }
+
+            // table
+            // https://www.w3schools.com/w3css/w3css_tables.asp
+            // table(class="w3-table w3-centered w3-large") {
+            //     tr {
+            //         @ for publiation in &publication_list {
+            //             th {
+            //                 : format_args!("{}/{}",publiation.parent_path ,publiation.filename)
+            //             }
+            //         }
+            //     }
+            // }
+
+            // image gallery
+            // https://www.w3schools.com/Css/css_image_gallery.asp
+            @ for publiation in &publication_list {
+                div(class="gallery") {
+                    img(src="https://www.w3schools.com/Css/img_5terre.jpg", alt="Cinque Terre", width="600", height="400")
+                    : format_args!("{}", publiation.filename)
                 }
             }
-
         }
     };
     render(body_content)

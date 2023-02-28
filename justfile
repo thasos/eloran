@@ -2,11 +2,11 @@
 default:
   just --list --unsorted
 
-run: check_db
+run:
     RUST_LOG=debug \
     cargo run
 
-test: check_db
+test:
     cargo test
 
 build: test
@@ -18,7 +18,3 @@ build_musl: test
 
 clean:
     cargo clean
-
-# TODO select user...
-check_db:
-    ls ./sqlite/eloran.db

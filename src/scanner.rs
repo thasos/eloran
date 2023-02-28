@@ -1,6 +1,6 @@
-use crate::sqlite;
 use jwalk::WalkDirGeneric;
 use sqlx::Row;
+use sqlx::SqlitePool;
 // use sqlx::pool::PoolConnection;
 // use sqlx::Sqlite;
 use std::path::Path;
@@ -10,7 +10,7 @@ use ulid::Ulid;
 
 /// id|filename|parent_path|read_status|scan_me|added_date|file_type|size|total_pages|current_page
 // TODO rename to Publication ? (match comic and book)
-#[derive(Debug, Default, Clone, sqlx::FromRow)]
+#[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq)]
 pub struct FileInfo {
     pub id: String,
     pub filename: String,
@@ -180,26 +180,28 @@ fn walk_recent_files(
 // TODO check total number file found, vs total in db (for insert errors) ?
 pub async fn scan_routine() {
     // TODO lib path in conf, need more checks of library ?
-    // let library_path = "library";
-    let library_path = "/home/thasos/books";
+    let library_path = "library";
+    // let library_path = "/home/thasos/books";
     info!("start scanner routine on library {}", library_path);
 
     loop {
         let library_path = Path::new(library_path);
-        if library_path.is_dir() {
+        if !library_path.is_dir() {
+            error!("{} does not exists", library_path.to_string_lossy());
+        } else {
             debug!(
                 "path \"{}\" found and is a directory",
                 library_path.to_string_lossy()
             );
 
             // create pool connexion
-            let mut conn = sqlite::create_sqlite_connection().await;
+            let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
 
             // retrieve last_successfull_scan_date, 0 if first time
             let last_successfull_scan_date: i64 = match sqlx::query(
                 "SELECT last_successfull_scan_date FROM core WHERE id = 1",
             )
-            .fetch_one(&mut conn)
+            .fetch_one(&conn)
             .await
             {
                 Ok(epoch_date_row) => {
@@ -239,7 +241,7 @@ pub async fn scan_routine() {
                         entry.parent_path.to_string_lossy().replace('\'', "''"),
                         entry.file_name.to_string_lossy().replace('\'', "''")
                     ))
-                    .fetch_all(&mut conn)
+                    .fetch_all(&conn)
                     .await
                     {
                         Ok(file_found) => file_found,
@@ -259,7 +261,7 @@ pub async fn scan_routine() {
                                 file.filename.replace('\'', "''"),
                                 file.parent_path.replace('\'', "''")
                             ))
-                            .execute(&mut conn)
+                            .execute(&conn)
                             .await
                             {
                                 Ok(_) => {
@@ -286,7 +288,7 @@ pub async fn scan_routine() {
                         filename.replace('\'', "''"),
                         parent_path.replace('\'', "''")
                     ))
-                    .fetch_all(&mut conn)
+                    .fetch_all(&conn)
                     .await
                     {
                         Ok(file_found) => file_found,
@@ -300,7 +302,7 @@ pub async fn scan_routine() {
                     if file_found.is_empty() {
                         warn!("new file found : {}/{}", parent_path, filename);
                         let insert_query = insert_new_file(&file_infos, None);
-                        match sqlx::query(&insert_query).execute(&mut conn).await {
+                        match sqlx::query(&insert_query).execute(&conn).await {
                             Ok(_) => {
                                 debug!("file update successfull")
                             }
@@ -311,7 +313,7 @@ pub async fn scan_routine() {
                         warn!("file modified : {}/{}", parent_path, filename);
                         let ulid_found = &file_found[0].id;
                         let insert_query = insert_new_file(&file_infos, Some(ulid_found));
-                        match sqlx::query(&insert_query).execute(&mut conn).await {
+                        match sqlx::query(&insert_query).execute(&conn).await {
                             Ok(_) => {
                                 debug!("file update successfull")
                             }
@@ -338,7 +340,7 @@ pub async fn scan_routine() {
                     VALUES (1, '{}');",
                 since_the_epoch.as_secs() as i64
             ))
-            .execute(&mut conn)
+            .execute(&conn)
             .await
             {
                 Ok(_) => debug!("last_successfull_scan_date updated in database"),
@@ -347,29 +349,28 @@ pub async fn scan_routine() {
 
             // launch extractor
             // file_extractor_routine().await;
-
-            // TODO true schedule, last scan status in db...
-            let sleep_time = Duration::from_secs(5);
-            debug!(
-                "stop scanning, sleeping for {} seconds",
-                sleep_time.as_secs()
-            );
-            tokio::time::sleep(sleep_time).await;
         }
+        // TODO true schedule, last scan status in db...
+        let sleep_time = Duration::from_secs(5);
+        debug!(
+            "stop scanning, sleeping for {} seconds",
+            sleep_time.as_secs()
+        );
+        tokio::time::sleep(sleep_time).await;
     }
 }
 
 /// extract images and metadatas form files
 /// based on file list generated with scan_routine fn
-async fn file_extractor_routine() {
+async fn _file_extractor_routine() {
     info!("start file extractor routine");
     // create pool connexion
-    let mut conn = sqlite::create_sqlite_connection().await;
+    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
     loop {
         // create file list from database
         let file_to_scan: Vec<FileInfo> =
             match sqlx::query_as("SELECT * FROM library WHERE scan_me = '1';")
-                .fetch_all(&mut conn)
+                .fetch_all(&conn)
                 .await
             {
                 Ok(file_found) => file_found,
@@ -395,7 +396,7 @@ async fn file_extractor_routine() {
                     VALUES ('{}', '{}');",
                     file.id, toto
                 ))
-                .execute(&mut conn)
+                .execute(&conn)
                 .await
                 {
                     Ok(_) => {
@@ -408,7 +409,7 @@ async fn file_extractor_routine() {
                             "UPDATE library SET scan_me = '0' WHERE id = '{}';",
                             file.id
                         ))
-                        .execute(&mut conn)
+                        .execute(&conn)
                         .await
                         {
                             Ok(_) => (),
@@ -434,4 +435,152 @@ async fn file_extractor_routine() {
         );
         tokio::time::sleep(sleep_time).await;
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sqlite;
+    use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+    use std::fs::{self, File};
+    use std::io::prelude::*;
+    use std::path::Path;
+
+    const DB_URL: &str = "sqlite://sqlite/eloran.db";
+
+    fn create_fake_library(library_path: &Path) -> std::io::Result<()> {
+        fs::create_dir(library_path)?;
+        fs::create_dir(library_path.join("Asterix"))?;
+        let mut file = File::create(library_path.join("Asterix/T01 - Asterix le Gaulois.pdf"))?;
+        file.write(b"lalalalala")?;
+        file.flush()?;
+        let mut file = File::create(library_path.join("Asterix/T02 - La Serpe d'Or.pdf"))?;
+        file.write(b"lalalalala")?;
+        file.flush()?;
+        fs::create_dir(library_path.join("Goblin's"))?;
+        File::create(library_path.join("Goblin's/T01.cbz"))?;
+        File::create(library_path.join("Goblin's/T02.cbz"))?;
+        fs::create_dir(library_path.join("H.P. Lovecraft"))?;
+        fs::create_dir(library_path.join("H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)"))?;
+        File::create(
+            library_path.join("H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/metadata.opf"),
+        )?;
+        File::create(library_path.join("H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/cover.jpg"))?;
+        File::create(library_path.join("H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/Le Cauchemar d'Innsmouth - Howard Phillips Lovecraft.epub"))?;
+        fs::create_dir(library_path.join("Dragonlance"))?;
+        Ok(())
+    }
+
+    fn delete_fake_library(library_path: &Path) -> std::io::Result<()> {
+        fs::remove_dir_all(library_path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_new_file() {
+        // create library
+        let library_path = Path::new("library_new_file");
+        create_fake_library(library_path).unwrap_or(());
+        // run test
+        let validation_file =
+            extract_new_file_infos(&library_path.join("Asterix/T01 - Asterix le Gaulois.pdf"));
+        let skeletion_file = FileInfo {
+            filename: "T01 - Asterix le Gaulois.pdf".to_string(),
+            parent_path: format!("{}/Asterix", library_path.to_string_lossy()),
+            read_status: 0,
+            scan_me: 1,
+            file_type: "pdf".to_string(),
+            size: 10,
+            total_pages: 0,
+            current_page: 0,
+            // id and added_date are random, so we take them from validation_file
+            added_date: validation_file.added_date.clone(),
+            id: validation_file.id.clone(),
+        };
+        assert_eq!(validation_file, skeletion_file);
+        // delete library
+        delete_fake_library(library_path).unwrap_or(());
+    }
+
+    #[tokio::test]
+    async fn test_insert_new_file() {
+        // init database
+        sqlite::init_database().await;
+        // run test
+        let skeletion_file = FileInfo {
+            filename: "T01 - Asterix le Gaulois.pdf".to_string(),
+            parent_path: "library/Asterix".to_string(),
+            read_status: 0,
+            scan_me: 1,
+            file_type: "pdf".to_string(),
+            size: 10,
+            total_pages: 0,
+            current_page: 0,
+            // id and added_date are random, so we take them from validation_file
+            added_date: 666,
+            id: "666".to_string(),
+        };
+        let insert_query = insert_new_file(&skeletion_file, None);
+        let conn = SqlitePool::connect(DB_URL).await.unwrap();
+        match sqlx::query(&insert_query).execute(&conn).await {
+            Ok(_) => {
+                debug!("file update successfull")
+            }
+            Err(e) => error!("file infos insert failed : {e}"),
+        };
+        // delete database
+        Sqlite::drop_database(crate::DB_URL);
+    }
+
+    #[test]
+    fn test_walkdir() {
+        // create library
+        let library_path = Path::new("library_walkdir");
+        create_fake_library(library_path).unwrap_or(());
+        // run test
+        let timestamp_flag = Duration::from_secs(666);
+        // recent directories
+        let dir_list = walk_recent_dir(library_path, timestamp_flag);
+        let mut dir_list_path: Vec<String> = vec![];
+        for entry in dir_list.into_iter().flatten() {
+            if entry.client_state {
+                dir_list_path.push(entry.path().to_string_lossy().to_string());
+            }
+        }
+        let check_dir_list_path: Vec<String> = vec![
+            "library_walkdir".to_string(),
+            "library_walkdir/Asterix".to_string(),
+            "library_walkdir/Goblin's".to_string(),
+            "library_walkdir/H.P. Lovecraft".to_string(),
+            "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)".to_string(),
+            "library_walkdir/Dragonlance".to_string(),
+        ];
+        assert_eq!(dir_list_path, check_dir_list_path);
+        // recent files
+        let file_list = walk_recent_files(library_path, timestamp_flag);
+        let mut file_list_path: Vec<String> = vec![];
+        for entry in file_list.into_iter().flatten() {
+            if entry.client_state {
+                file_list_path.push(entry.path().to_string_lossy().to_string());
+            }
+        }
+        let check_file_list_path: Vec<String> = vec![
+            "library_walkdir/Asterix/T01 - Asterix le Gaulois.pdf".to_string(),
+            "library_walkdir/Asterix/T02 - La Serpe d'Or.pdf".to_string(),
+            "library_walkdir/Goblin's/T01.cbz".to_string(),
+            "library_walkdir/Goblin's/T02.cbz".to_string(),
+            "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/metadata.opf".to_string(),
+            "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/cover.jpg".to_string(),
+            "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/Le Cauchemar d'Innsmouth - Howard Phillips Lovecraft.epub".to_string()
+        ];
+        assert_eq!(file_list_path, check_file_list_path);
+        // delete database
+        delete_fake_library(library_path).unwrap_or(());
+    }
+
+    // #[test]
+    // fn test_delete_file() {
+    //     // TODO
+    //     todo!();
+    // }
 }

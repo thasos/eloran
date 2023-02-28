@@ -9,6 +9,8 @@ extern crate log;
 extern crate horrorshow;
 use std::io::Error;
 
+const DB_URL: &str = "sqlite://sqlite/eloran.db";
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     env_logger::init();
@@ -18,10 +20,10 @@ async fn main() -> Result<(), Error> {
         CARGO_PKG_VERSION.unwrap_or("version not found")
     );
 
-    // tokio::spawn(async {
-    //     // TODO true error handling
-    //     scanner::file_extractor_routine().await;
-    // });
+    // TODO use this const...
+    sqlite::init_database().await;
+    // TODO only if needed...
+    sqlite::init_users(DB_URL).await;
 
     tokio::spawn(async {
         // TODO true error handling
