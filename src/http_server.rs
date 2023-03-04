@@ -1,5 +1,5 @@
 use crate::html_render::{self, login_ok};
-use crate::scanner::FileInfo;
+use crate::scanner::{DirectoryInfo, FileInfo};
 use crate::sqlite;
 use axum::http::header;
 use axum::http::StatusCode;
@@ -113,24 +113,78 @@ async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
     }
 }
 
-async fn library_handler(Extension(user): Extension<User>) -> impl IntoResponse {
-    info!("get /library : {user:?}");
-
-    // retrieve books list
+async fn reader_handler(
+    Extension(user): Extension<User>,
+    path: Option<Path<String>>,
+) -> impl IntoResponse {
     let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
-    // TODO set limit in conf
-    let publication_list: Vec<FileInfo> = match sqlx::query_as("SELECT * FROM library LIMIT 20")
+    let library_path: String = sqlite::get_library_path(&conn).await;
+    let path = match path {
+        Some(path) => format!("/{}", path.as_str()),
+        None => String::new(),
+    };
+    let toto = format!("coucou : {} {} {}", user.name, path, library_path);
+    Html(toto)
+}
+
+async fn library_handler(
+    Extension(user): Extension<User>,
+    path: Option<Path<String>>,
+) -> impl IntoResponse {
+    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
+    let library_path: String = sqlite::get_library_path(&conn).await;
+    let path = match path {
+        Some(path) => format!("/{}", path.as_str()),
+        None => String::new(),
+    };
+
+    let files_list: Vec<FileInfo> = {
+        info!("get /library{} : {}", path, user.name);
+        // TODO set limit in conf
+        let files_list: Vec<FileInfo> = match sqlx::query_as(&format!(
+            "SELECT * FROM files WHERE parent_path = '{library_path}{}' LIMIT 20",
+            path.replace('\'', "''")
+        ))
         .fetch_all(&conn)
         .await
-    {
-        Ok(publication_list) => publication_list,
-        Err(e) => {
-            warn!("empty library : {}", e);
-            let empty_list: Vec<FileInfo> = Vec::new();
-            empty_list
-        }
+        {
+            Ok(files_list) => files_list,
+            Err(e) => {
+                warn!("empty library : {}", e);
+                let empty_list: Vec<FileInfo> = Vec::new();
+                empty_list
+            }
+        };
+        files_list
     };
-    Html(html_render::library(&user, publication_list))
+
+    let directories_list: Vec<DirectoryInfo> = {
+        info!("get /library{} : {}", path, user.name);
+        // TODO set limit in conf
+        let directories_list: Vec<DirectoryInfo> = match sqlx::query_as(&format!(
+            "SELECT * FROM directories WHERE parent_path = '{library_path}{}' LIMIT 20",
+            path.replace('\'', "''")
+        ))
+        .fetch_all(&conn)
+        .await
+        {
+            Ok(directories_list) => directories_list,
+            Err(e) => {
+                warn!("empty library : {}", e);
+                let empty_list: Vec<DirectoryInfo> = Vec::new();
+                empty_list
+            }
+        };
+        directories_list
+    };
+
+    Html(html_render::library(
+        &user,
+        path,
+        directories_list,
+        files_list,
+        library_path,
+    ))
 }
 
 async fn admin_handler(Extension(user): Extension<User>) -> impl IntoResponse {
@@ -162,7 +216,36 @@ async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
     // TODO tests content pour 200 ?
     match css_file_content {
         Ok(css) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], css).into_response(),
-        Err(_) => (StatusCode::NOT_FOUND, "css not found").into_response(),
+        Err(_) => {
+            error!("images {path} not found");
+            // TODO true 404
+            (StatusCode::NOT_FOUND, "css not found").into_response()
+        }
+    }
+}
+
+async fn get_images(Path(path): Path<String>) -> impl IntoResponse {
+    info!("get /images/{}", path);
+    // TODO include_bytes pour la base ? (cf monit-agregator)
+    // read_to_string if svg instead of svgz
+    // https://developer.mozilla.org/en-US/docs/Web/SVG/Tutorial/Getting_Started#a_word_on_web_servers_for_.svgz_files
+    let image_file_content = fs::read(format!("src/images/{path}"));
+    // TODO tests content pour 200 ?
+    match image_file_content {
+        Ok(image) => (
+            StatusCode::OK,
+            // [(header::CONTENT_TYPE, "image/svg+xml")],
+            [(header::CONTENT_TYPE, "image/svg+xml")],
+            [(header::CONTENT_ENCODING, "gzip")],
+            [(header::VARY, "Accept-Encoding")],
+            image,
+        )
+            .into_response(),
+        Err(_) => {
+            error!("images {path} not found");
+            // TODO true 404
+            (StatusCode::NOT_FOUND, "image not found").into_response()
+        }
     }
 }
 
@@ -184,13 +267,21 @@ async fn create_router() -> Router {
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::Admin..,
         ))
+        // 🤔 I don't know why but /library and /library/ are also protected...
         .route("/library", get(library_handler))
+        .route("/library/", get(library_handler))
+        .route("/library/*path", get(library_handler))
+        .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
+            Role::User..,
+        ))
+        .route("/read/*path", get(reader_handler))
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::User..,
         ))
         // 🔥 UNPROTECTED 🔥
         .route("/", get(get_root))
         .route("/css/*path", get(get_css))
+        .route("/images/*path", get(get_images))
         .route("/login", post(login_handler))
         .route("/logout", get(logout_handler))
         // layers for redirect when not logged
@@ -237,7 +328,7 @@ mod tests {
         sqlite::init_database().await;
         sqlite::init_users(DB_URL).await;
         // headers
-        let headers = "<!DOCTYPE html><html><head><title>Eloran</title><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width\"><link rel=\"stylesheet\" href=\"css/w3.css\"><link rel=\"stylesheet\" href=\"css/gallery.css\"><link rel=\"stylesheet\" href=\"css/w3-theme-dark-grey.css\"><meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\"><meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\"></head><body class=\"w3-theme-dark\">";
+        let headers = "<!DOCTYPE html><html><head><title>Eloran</title><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width\"><link rel=\"stylesheet\" href=\"/css/w3.css\"><link rel=\"stylesheet\" href=\"/css/gallery.css\"><link rel=\"stylesheet\" href=\"/css/w3-theme-dark-grey.css\"><meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\"><meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\"></head><body class=\"w3-theme-dark\">";
         // create router
         let router = create_router();
         // root without auth

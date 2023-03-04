@@ -1,5 +1,5 @@
-use crate::http_server::User;
 use crate::scanner::FileInfo;
+use crate::{http_server::User, scanner::DirectoryInfo};
 use horrorshow::{helper::doctype, Template};
 
 fn header<'a>() -> Box<dyn horrorshow::RenderBox + 'a> {
@@ -8,9 +8,9 @@ fn header<'a>() -> Box<dyn horrorshow::RenderBox + 'a> {
         title : "Eloran";
         meta(charset="UTF-8");
         meta(name="viewport", content="width=device-width");
-        link(rel="stylesheet", href="css/w3.css");
-        link(rel="stylesheet", href="css/gallery.css");
-        link(rel="stylesheet", href="css/w3-theme-dark-grey.css");
+        link(rel="stylesheet", href="/css/w3.css");
+        link(rel="stylesheet", href="/css/gallery.css");
+        link(rel="stylesheet", href="/css/w3-theme-dark-grey.css");
         meta(http-equiv="Cache-Control", content="no-cache, no-store, must-revalidate");
         meta(http-equiv="Pragma", content="no-cache");
         meta(http-equiv="Expires", content="0");
@@ -61,43 +61,56 @@ pub fn logout(user: &User) -> String {
     render(body_content)
 }
 
-pub fn library(user: &User, publication_list: Vec<FileInfo>) -> String {
+pub fn library(
+    user: &User,
+    current_path: String,
+    directories_list: Vec<DirectoryInfo>,
+    files_list: Vec<FileInfo>,
+    library_path: String,
+) -> String {
     debug!("fn homepage");
+    let mut full_path: Vec<&str> = current_path.split('/').collect();
+    full_path.pop();
+    let mut parent_directory = String::new();
+    for word in full_path {
+        parent_directory.push_str(word);
+        parent_directory.push('/');
+    }
+    parent_directory.pop();
+
     // TODO moche (obligé le clone  ?)
     let menu = menu(user.clone());
     let body_content = box_html! {
         : menu;
         div(id="library-content") {
             p {
-                : "Library list";
+                : "url path = ";
+                : format!("/library{}", &current_path);
+                br;
+                : "diskpath = ";
+                : format!("{library_path}{}", &current_path);
             }
-            // list naze
-            // ul(id="publiations") {
-            //     @ for publiation in &publication_list {
-            //         li {
-            //             : format_args!("{}/{}",publiation.parent_path ,publiation.filename)
-            //         }
-            //     }
-            // }
-
-            // table
-            // https://www.w3schools.com/w3css/w3css_tables.asp
-            // table(class="w3-table w3-centered w3-large") {
-            //     tr {
-            //         @ for publiation in &publication_list {
-            //             th {
-            //                 : format_args!("{}/{}",publiation.parent_path ,publiation.filename)
-            //             }
-            //         }
-            //     }
-            // }
-
+            p {
+                    a(href=format!("/library{}", &parent_directory)) {
+                        : "up"
+                    }
+            }
             // image gallery
             // https://www.w3schools.com/Css/css_image_gallery.asp
-            @ for publiation in &publication_list {
+            @ for directory in &directories_list {
                 div(class="gallery") {
-                    img(src="https://www.w3schools.com/Css/img_5terre.jpg", alt="Cinque Terre", width="600", height="400")
-                    : format_args!("{}", publiation.filename)
+                    a(href=format!("/library{}/{}", &current_path, &directory.directory_name)) {
+                        img(src="/images/folder.svgz", alt="folder", width="600", height="400")
+                        : format_args!("{}", directory.directory_name)
+                    }
+                }
+            }
+            @ for file in &files_list {
+                div(class="gallery") {
+                    a(href=format!("/read/{}/{}", &current_path, &file.filename)) {
+                        img(src="/images/green_book.svgz", alt="green book", width="600", height="400")
+                        : format_args!("{}", file.filename)
+                    }
                 }
             }
         }

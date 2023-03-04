@@ -1,5 +1,6 @@
 use sqlx::pool::Pool;
 use sqlx::sqlite::SqlitePoolOptions;
+use sqlx::Row;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use std::fs;
 use std::path::Path;
@@ -42,6 +43,7 @@ pub async fn init_database() {
     // tables
     // TODO check if already created ?
     let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
+    // TODO rename filename into name ? (same for directories)
     let schema = r#"
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY NOT NULL,
@@ -49,7 +51,12 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   role TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS library (
+CREATE TABLE IF NOT EXISTS directories (
+  id ULID PRIMARY KEY NOT NULL,
+  directory_name TEXT NOT NULL,
+  parent_path TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS files (
   id ULID PRIMARY KEY NOT NULL,
   filename TEXT NOT NULL,
   parent_path TEXT NOT NULL,
@@ -63,6 +70,7 @@ CREATE TABLE IF NOT EXISTS library (
 );
 CREATE TABLE IF NOT EXISTS core (
   id INTEGER PRIMARY KEY NOT NULL,
+  library_path TEXT DEFAULT NULL,
   last_successfull_scan_date INTEGER NOT NULL DEFAULT 0,
   last_successfull_extract_date INTEGER NOT NULL DEFAULT 0
 );
@@ -87,5 +95,35 @@ VALUES (1,'pass123','admin','Admin'),
     match sqlx::query(schema).execute(&conn).await {
         Ok(_) => info!("users successfully created"),
         Err(e) => error!("failed to create users : {}", e),
+    }
+}
+
+/// register the library path in database if needed
+pub async fn set_library_path(library_path: &Path, conn: &Pool<Sqlite>) {
+    // TODO test in exsists to avoid a useless write...
+    let insert_library_path = format!(
+        "INSERT OR IGNORE INTO core(id, library_path) VALUES (1,'{}');",
+        library_path.to_string_lossy().replace('\'', "''")
+    );
+    match sqlx::query(&insert_library_path).execute(conn).await {
+        Ok(_) => info!("library path successfully created"),
+        Err(e) => error!("failed to create library path : {}", e),
+    }
+}
+
+/// retrieve the library path in database
+pub async fn get_library_path(conn: &Pool<Sqlite>) -> String {
+    match sqlx::query("SELECT library_path FROM core WHERE id = 1;")
+        .fetch_one(conn)
+        .await
+    {
+        Ok(library_path) => {
+            let library_path: String = library_path.try_get("library_path").unwrap();
+            library_path
+        }
+        Err(e) => {
+            error!("failed to get library path : {}", e);
+            String::new()
+        }
     }
 }

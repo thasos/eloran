@@ -8,6 +8,7 @@ extern crate log;
 #[macro_use]
 extern crate horrorshow;
 use std::io::Error;
+use std::path::Path;
 
 const DB_URL: &str = "sqlite://sqlite/eloran.db";
 
@@ -26,8 +27,15 @@ async fn main() -> Result<(), Error> {
     sqlite::init_users(DB_URL).await;
 
     tokio::spawn(async {
+        // TODO lib path in conf, need more checks of library ?
+        let library_path = Path::new("library_test/");
+        // let library_path = Path::new("/home/thasos/books");
+        info!(
+            "start scanner routine on library {}",
+            library_path.to_string_lossy()
+        );
         // TODO true error handling
-        scanner::scan_routine().await;
+        scanner::scan_routine(library_path).await;
     });
 
     // TODO true error handling
