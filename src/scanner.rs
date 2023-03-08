@@ -9,30 +9,49 @@ use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
 
-/// id|filename|parent_path|read_status|scan_me|added_date|file_type|size|total_pages|current_page
+/// File struct, match database fields
+/// id|name|parent_path|read_status|scan_me|added_date|format|size|total_pages|current_page
 #[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq)]
 pub struct FileInfo {
     pub id: String,
-    pub filename: String,
+    pub name: String,
     pub parent_path: String,
     // no bool in sqlite :( , `stored as integers 0 (false) and 1 (true)`
     // see https://www.sqlite.org/datatype3.html
     pub read_status: i8,
     pub scan_me: i8,
     pub added_date: i64,
-    pub file_type: String,
+    pub format: String,
     // TODO make an Option<i64> if we want to print "unknow" in UI
     // i64 because no u64 with sqlite...
     pub size: i64,
     pub total_pages: i32,
     pub current_page: i32,
 }
+impl FileInfo {
+    pub fn new() -> FileInfo {
+        FileInfo {
+            // TODO default id ? 🤮
+            id: "666".to_string(),
+            name: "".to_string(),
+            parent_path: "".to_string(),
+            added_date: 0,
+            read_status: 0,
+            scan_me: 1,
+            format: "".to_string(),
+            size: 0,
+            total_pages: 0,
+            current_page: 0,
+        }
+    }
+}
 
-/// id|directory_name|parent_path
+/// Directory struct, match database fields
+/// id|name|parent_path
 #[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq)]
 pub struct DirectoryInfo {
     pub id: String,
-    pub directory_name: String,
+    pub name: String,
     pub parent_path: String,
 }
 
@@ -63,21 +82,19 @@ fn extract_file_infos(entry: &Path) -> FileInfo {
     };
     // file type
     // TODO enum for file type (and "not supported" if fot in members)
-    let file_type: Vec<&str> = filename.rsplit('.').collect();
-    let file_type = file_type[0].to_string();
+    let format: Vec<&str> = filename.rsplit('.').collect();
+    let format = format[0].to_string();
 
     // construct
     FileInfo {
         // TODO default id ? 🤮
         id: "666".to_string(),
-        filename,
+        name: filename,
         parent_path,
         added_date: since_the_epoch.as_secs() as i64,
-        // defaults bools for new file
-        // 0 = false, 1 = true
         read_status: 0,
         scan_me: 1,
-        file_type,
+        format,
         size: size.unwrap_or(0) as i64,
         total_pages: 0,
         current_page: 0,
@@ -93,17 +110,17 @@ async fn insert_new_file(file: &FileInfo, ulid: Option<&str>, conn: &Pool<Sqlite
     };
     // prepare query
     let insert_query = format!(
-        "INSERT OR REPLACE INTO files(id, filename, parent_path, size, added_date, scan_me, read_status, file_type, current_page, total_pages)
+        "INSERT OR REPLACE INTO files(id, name, parent_path, size, added_date, scan_me, read_status, format, current_page, total_pages)
                     VALUES('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
         ulid,
         // escape ' with '' in sqlite...
-        file.filename.replace('\'', "''"),
+        file.name.replace('\'', "''"),
         file.parent_path.replace('\'', "''"),
         file.size,
         file.added_date,
         file.scan_me,
         file.read_status,
-        file.file_type,
+        file.format,
         file.current_page,
         file.total_pages);
     match sqlx::query(&insert_query).execute(conn).await {
@@ -117,27 +134,27 @@ async fn insert_new_file(file: &FileInfo, ulid: Option<&str>, conn: &Pool<Sqlite
 /// delete a file in database
 async fn delete_file(file: &FileInfo, conn: &Pool<Sqlite>) {
     match sqlx::query(&format!(
-        "DELETE FROM files WHERE filename = '{}' AND parent_path = '{}';",
-        file.filename.replace('\'', "''"),
+        "DELETE FROM files WHERE name = '{}' AND parent_path = '{}';",
+        file.name.replace('\'', "''"),
         file.parent_path.replace('\'', "''")
     ))
     .execute(conn)
     .await
     {
         Ok(_) => {
-            info!("file {}/{} deleted", file.filename, file.parent_path)
+            info!("file {}/{} deleted", file.name, file.parent_path)
         }
         Err(e) => error!("delete ko : {}", e),
     }
 }
 
 /// get all file in a directory path from database
-async fn get_registered_files(
+async fn get_files_from_directory(
     parent_path: &str,
     directory_name: &str,
     conn: &Pool<Sqlite>,
 ) -> Vec<FileInfo> {
-    let registered_files: Vec<FileInfo> = match sqlx::query_as(&format!(
+    let files: Vec<FileInfo> = match sqlx::query_as(&format!(
         "SELECT * FROM files WHERE parent_path = '{}/{}'",
         parent_path.replace('\'', "''"),
         directory_name.replace('\'', "''")
@@ -152,7 +169,7 @@ async fn get_registered_files(
             empty_list
         }
     };
-    registered_files
+    files
 }
 
 /// get all diretories in a path from database
@@ -175,12 +192,12 @@ async fn get_registered_directories(conn: &Pool<Sqlite>) -> Vec<DirectoryInfo> {
 /// delete a directory in database
 async fn delete_directory(directory: &DirectoryInfo, conn: &Pool<Sqlite>) {
     match sqlx::query(&format!(
-        "DELETE FROM directories WHERE directory_name = '{}' AND parent_path = '{}';
+        "DELETE FROM directories WHERE name = '{}' AND parent_path = '{}';
          DELETE FROM files WHERE parent_path = '{}/{}'",
-        directory.directory_name.replace('\'', "''"),
+        directory.name.replace('\'', "''"),
         directory.parent_path.replace('\'', "''"),
         directory.parent_path.replace('\'', "''"),
-        directory.directory_name.replace('\'', "''"),
+        directory.name.replace('\'', "''"),
     ))
     .execute(conn)
     .await
@@ -188,7 +205,7 @@ async fn delete_directory(directory: &DirectoryInfo, conn: &Pool<Sqlite>) {
         Ok(_) => {
             info!(
                 "directory {}/{} deleted",
-                directory.directory_name, directory.parent_path
+                directory.name, directory.parent_path
             )
         }
         Err(e) => error!("delete ko : {}", e),
@@ -202,7 +219,7 @@ async fn check_if_directory_exists(
     conn: &Pool<Sqlite>,
 ) -> Vec<DirectoryInfo> {
     let directory_found: Vec<DirectoryInfo> = match sqlx::query_as(&format!(
-        "SELECT * FROM directories WHERE directory_name = '{}' AND parent_path = '{}'",
+        "SELECT * FROM directories WHERE name = '{}' AND parent_path = '{}'",
         directory_name.replace('\'', "''"),
         parent_path.replace('\'', "''")
     ))
@@ -226,7 +243,7 @@ async fn check_if_file_exists(
     conn: &Pool<Sqlite>,
 ) -> Vec<FileInfo> {
     let file_found: Vec<FileInfo> = match sqlx::query_as(&format!(
-        "SELECT * FROM files WHERE filename = '{}' AND parent_path = '{}'",
+        "SELECT * FROM files WHERE name = '{}' AND parent_path = '{}'",
         filename.replace('\'', "''"),
         parent_path.replace('\'', "''")
     ))
@@ -293,11 +310,11 @@ async fn insert_new_dir(directory: &DirectoryInfo, ulid: Option<&str>, conn: &Po
     };
     // prepare query
     let insert_query = format!(
-        "INSERT OR REPLACE INTO directories(id, directory_name, parent_path)
+        "INSERT OR REPLACE INTO directories(id, name, parent_path)
                     VALUES('{}', '{}', '{}');",
         ulid,
         // escape ' with '' in sqlite...
-        directory.directory_name.replace('\'', "''"),
+        directory.name.replace('\'', "''"),
         directory.parent_path.replace('\'', "''")
     );
     // insert_query
@@ -385,7 +402,7 @@ fn walk_recent_files(
 /// scan library path and add files in db
 // batch insert ? -> no speed improvement
 // TODO check total number file found, vs total in db (for insert errors) ?
-pub async fn scan_routine(library_path: &Path) {
+pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
     // register library_path in database if not present
     let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
 
@@ -411,18 +428,18 @@ pub async fn scan_routine(library_path: &Path) {
                 if entry.client_state {
                     let current_directory = DirectoryInfo {
                         id: "666".to_string(),
-                        directory_name: entry.file_name.to_string_lossy().to_string(),
+                        name: entry.file_name.to_string_lossy().to_string(),
                         parent_path: entry.parent_path.to_string_lossy().to_string(),
                     };
                     info!(
                         "new changes in dir {}/{}, need to scan it",
-                        current_directory.directory_name, current_directory.parent_path,
+                        current_directory.name, current_directory.parent_path,
                     );
                     // TODO add dir in db only in fot exists
                     // TODO use struct ....
                     let directory_found = check_if_directory_exists(
                         &current_directory.parent_path,
-                        &current_directory.directory_name,
+                        &current_directory.name,
                         &conn,
                     )
                     .await;
@@ -433,7 +450,7 @@ pub async fn scan_routine(library_path: &Path) {
 
                     // search for removed files
                     // retrieve file list in database for current directory
-                    let registered_files = get_registered_files(
+                    let registered_files = get_files_from_directory(
                         &entry.parent_path.to_string_lossy(),
                         &entry.file_name.to_string_lossy(),
                         &conn,
@@ -441,7 +458,7 @@ pub async fn scan_routine(library_path: &Path) {
                     .await;
                     // check if files exists for current directory, delete in database if not
                     for file in registered_files {
-                        let full_path = format!("{}/{}", file.parent_path, file.filename);
+                        let full_path = format!("{}/{}", file.parent_path, file.name);
                         let file_path = Path::new(&full_path);
                         if !file_path.is_file() {
                             delete_file(&file, &conn).await;
@@ -454,7 +471,7 @@ pub async fn scan_routine(library_path: &Path) {
             let registered_directories = get_registered_directories(&conn).await;
             // check if files exists for current directory, delete in database if not
             for directory in registered_directories {
-                let full_path = format!("{}/{}", directory.parent_path, directory.directory_name);
+                let full_path = format!("{}/{}", directory.parent_path, directory.name);
                 let directory_path = Path::new(&full_path);
                 if !directory_path.is_dir() {
                     info!(
@@ -472,7 +489,7 @@ pub async fn scan_routine(library_path: &Path) {
             for entry in recent_file_list.into_iter().flatten() {
                 if entry.client_state {
                     let file_infos = extract_file_infos(entry.path().as_path());
-                    let filename = &file_infos.filename;
+                    let filename = &file_infos.name;
                     let parent_path = &file_infos.parent_path;
                     let file_found = check_if_file_exists(parent_path, filename, &conn).await;
                     // new file
@@ -504,7 +521,6 @@ pub async fn scan_routine(library_path: &Path) {
             // file_extractor_routine().await;
         }
         // TODO true schedule, last scan status in db...
-        let sleep_time = Duration::from_secs(5);
         debug!(
             "stop scanning, sleeping for {} seconds",
             sleep_time.as_secs()
@@ -539,7 +555,7 @@ async fn _file_extractor_routine() {
             for file in file_to_scan {
                 debug!(
                     "need to extract infos from file {}/{}",
-                    file.parent_path, file.filename
+                    file.parent_path, file.name
                 );
                 // insert covert in blob
                 // TODO true cover
@@ -553,10 +569,7 @@ async fn _file_extractor_routine() {
                 .await
                 {
                     Ok(_) => {
-                        debug!(
-                            "cover updated for file {}/{}",
-                            file.parent_path, file.filename
-                        );
+                        debug!("cover updated for file {}/{}", file.parent_path, file.name);
                         // if covert insert ok, set scan_me to 0
                         match sqlx::query(&format!(
                             "UPDATE files SET scan_me = '0' WHERE id = '{}';",
@@ -568,13 +581,13 @@ async fn _file_extractor_routine() {
                             Ok(_) => (),
                             Err(e) => debug!(
                                 "failed to update scan_me flag for file {}/{} : {e}",
-                                file.parent_path, file.filename
+                                file.parent_path, file.name
                             ),
                         }
                     }
                     Err(e) => debug!(
                         "failed to update covers for file {}/{} : {e}",
-                        file.parent_path, file.filename
+                        file.parent_path, file.name
                     ),
                 };
             }
@@ -638,11 +651,11 @@ mod tests {
         let validation_file =
             extract_file_infos(&library_path.join("Asterix/T01 - Asterix le Gaulois.pdf"));
         let skeletion_file = FileInfo {
-            filename: "T01 - Asterix le Gaulois.pdf".to_string(),
+            name: "T01 - Asterix le Gaulois.pdf".to_string(),
             parent_path: format!("{}/Asterix", library_path.to_string_lossy()),
             read_status: 0,
             scan_me: 1,
-            file_type: "pdf".to_string(),
+            format: "pdf".to_string(),
             size: 10,
             total_pages: 0,
             current_page: 0,
@@ -661,11 +674,11 @@ mod tests {
         sqlite::init_database().await;
         // run test
         let skeletion_file = FileInfo {
-            filename: "T01 - Asterix le Gaulois.pdf".to_string(),
+            name: "T01 - Asterix le Gaulois.pdf".to_string(),
             parent_path: "library/Asterix".to_string(),
             read_status: 0,
             scan_me: 1,
-            file_type: "pdf".to_string(),
+            format: "pdf".to_string(),
             size: 10,
             total_pages: 0,
             current_page: 0,
@@ -689,10 +702,7 @@ mod tests {
                 empty_list
             }
         };
-        assert_eq!(
-            file_from_base.first().unwrap().filename,
-            skeletion_file.filename
-        );
+        assert_eq!(file_from_base.first().unwrap().name, skeletion_file.name);
         // delete database
         Sqlite::drop_database(crate::DB_URL);
     }

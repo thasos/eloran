@@ -1,6 +1,6 @@
 use crate::scanner::FileInfo;
 use crate::{http_server::User, scanner::DirectoryInfo};
-use horrorshow::{helper::doctype, Template};
+use horrorshow::{helper::doctype, Raw, Template};
 
 fn header<'a>() -> Box<dyn horrorshow::RenderBox + 'a> {
     // TODO css, metadatas...
@@ -61,6 +61,35 @@ pub fn logout(user: &User) -> String {
     render(body_content)
 }
 
+pub fn ebook_reader(user: &User, file: &FileInfo, epub_content: &str, page: i32) -> String {
+    let menu = menu(user.clone());
+    let epub_content = epub_content.to_string();
+    let file = file.clone();
+    // don't go outside the range of the book
+    let previous_page = match page {
+        0 => 0,
+        _ => page - 1,
+    };
+    let next_page = if page < file.total_pages {
+        page + 1
+    } else {
+        file.total_pages
+    };
+    // add menu and nav links to ebook raw rendering
+    let body_content = box_html! {
+        : menu;
+        div(id="navigation") {
+            a(href=format!("/read/{}/{}", file.id, previous_page)) : "<-";
+            : " | " ;
+            a(href=format!("/read/{}/{}", file.id, next_page)) : "->";
+        }
+        div(id="epub-content") {
+            p {: Raw(epub_content); }
+        }
+    };
+    render(body_content)
+}
+
 pub fn library(
     user: &User,
     current_path: String,
@@ -87,7 +116,7 @@ pub fn library(
                 : "url path = ";
                 : format!("/library{}", &current_path);
                 br;
-                : "diskpath = ";
+                : "disk path = ";
                 : format!("{library_path}{}", &current_path);
             }
             p {
@@ -99,17 +128,18 @@ pub fn library(
             // https://www.w3schools.com/Css/css_image_gallery.asp
             @ for directory in &directories_list {
                 div(class="gallery") {
-                    a(href=format!("/library{}/{}", &current_path, &directory.directory_name)) {
+                    a(href=format!("/library{}/{}", &current_path, &directory.name)) {
                         img(src="/images/folder.svgz", alt="folder", width="600", height="400")
-                        : format_args!("{}", directory.directory_name)
+                        : format_args!("{}", directory.name)
                     }
                 }
             }
             @ for file in &files_list {
                 div(class="gallery") {
-                    a(href=format!("/read/{}/{}", &current_path, &file.filename)) {
+                    // TODO add field `current page` instead of page 0...
+                    a(href=format!("/read/{}/{}", &file.id, &file.current_page)) {
                         img(src="/images/green_book.svgz", alt="green book", width="600", height="400")
-                        : format_args!("{}", file.filename)
+                        : format_args!("{}", file.name)
                     }
                 }
             }

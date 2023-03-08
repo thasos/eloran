@@ -1,6 +1,8 @@
 use crate::html_render::{self, login_ok};
+use crate::reader;
 use crate::scanner::{DirectoryInfo, FileInfo};
 use crate::sqlite;
+
 use axum::http::header;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
@@ -115,16 +117,27 @@ async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
 
 async fn reader_handler(
     Extension(user): Extension<User>,
-    path: Option<Path<String>>,
+    Path((id, page)): Path<(String, i32)>,
 ) -> impl IntoResponse {
+    // TODO set current page to 0 if not provided ?
+    // let page: i32 = page.unwrap_or(0);
     let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
-    let library_path: String = sqlite::get_library_path(&conn).await;
-    let path = match path {
-        Some(path) => format!("/{}", path.as_str()),
-        None => String::new(),
+    info!("get /reader/{} (page {}) : {}", &id, &page, &user.name);
+    let file = sqlite::get_files_from_id(&id, &conn).await;
+    // set page at current_page
+    sqlite::set_current_page_from_id(&file.id, &page, &conn).await;
+
+    let reader = match file.format.as_str() {
+        "epub" => reader::epub(&file, page).await,
+        // "pdf" => reader::pdf(&user, file),
+        // "cbr" => reader::cbr(&user, file),
+        // "cbz" => reader::cbz(&user, file),
+        // "txt" => reader::txt(&user, file),
+        // "raw" => reader::raw(&user, file),
+        _ => "no yet supported".to_string(),
     };
-    let toto = format!("coucou : {} {} {}", user.name, path, library_path);
-    Html(toto)
+
+    Html(html_render::ebook_reader(&user, &file, &reader, page))
 }
 
 async fn library_handler(
@@ -274,10 +287,15 @@ async fn create_router() -> Router {
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::User..,
         ))
-        .route("/read/*path", get(reader_handler))
+        .route("/read/:id/:page", get(reader_handler))
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::User..,
         ))
+        // TODO create cover handler, store it in db, etc...
+        // .route("/covers/*path", get(cover_handler))
+        // .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
+        //     Role::User..,
+        // ))
         // 🔥 UNPROTECTED 🔥
         .route("/", get(get_root))
         .route("/css/*path", get(get_css))

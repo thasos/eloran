@@ -1,5 +1,6 @@
 mod html_render;
 mod http_server;
+mod reader;
 mod scanner;
 mod sqlite;
 
@@ -9,6 +10,7 @@ extern crate log;
 extern crate horrorshow;
 use std::io::Error;
 use std::path::Path;
+use std::time::Duration;
 
 const DB_URL: &str = "sqlite://sqlite/eloran.db";
 
@@ -28,14 +30,16 @@ async fn main() -> Result<(), Error> {
 
     tokio::spawn(async {
         // TODO lib path in conf, need more checks of library ?
-        let library_path = Path::new("library_test/");
+        let library_path = Path::new("library_test");
+        // let library_path = Path::new("library_2");
         // let library_path = Path::new("/home/thasos/books");
         info!(
             "start scanner routine on library {}",
             library_path.to_string_lossy()
         );
         // TODO true error handling
-        scanner::scan_routine(library_path).await;
+        let sleep_time = Duration::from_secs(35);
+        scanner::scan_routine(library_path, sleep_time).await;
     });
 
     // TODO true error handling

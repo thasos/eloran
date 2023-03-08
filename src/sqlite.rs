@@ -1,3 +1,5 @@
+use crate::scanner::FileInfo;
+
 use sqlx::pool::Pool;
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::Row;
@@ -19,7 +21,7 @@ pub async fn init_database() {
     if !database_path.is_dir() {
         match fs::create_dir(database_path) {
             Ok(_) => (),
-            Err(e) => println!(
+            Err(e) => error!(
                 "failed to create {} : {}",
                 database_path.to_string_lossy(),
                 e
@@ -43,7 +45,6 @@ pub async fn init_database() {
     // tables
     // TODO check if already created ?
     let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
-    // TODO rename filename into name ? (same for directories)
     let schema = r#"
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY NOT NULL,
@@ -53,17 +54,17 @@ CREATE TABLE IF NOT EXISTS users (
 );
 CREATE TABLE IF NOT EXISTS directories (
   id ULID PRIMARY KEY NOT NULL,
-  directory_name TEXT NOT NULL,
+  name TEXT NOT NULL,
   parent_path TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS files (
   id ULID PRIMARY KEY NOT NULL,
-  filename TEXT NOT NULL,
+  name TEXT NOT NULL,
   parent_path TEXT NOT NULL,
   read_status BOOLEAN DEFAULT FALSE,
   scan_me BOOLEAN DEFAULT TRUE,
   added_date INTEGER NOT NULL,
-  file_type TEXT DEFAULT NULL,
+  format TEXT DEFAULT NULL,
   size INTEGER NOT NULL DEFAULT 0,
   total_pages INTEGER NOT NULL DEFAULT 0,
   current_page INTEGER NOT NULL DEFAULT 0
@@ -100,14 +101,30 @@ VALUES (1,'pass123','admin','Admin'),
 
 /// register the library path in database if needed
 pub async fn set_library_path(library_path: &Path, conn: &Pool<Sqlite>) {
-    // TODO test in exsists to avoid a useless write...
-    let insert_library_path = format!(
-        "INSERT OR IGNORE INTO core(id, library_path) VALUES (1,'{}');",
-        library_path.to_string_lossy().replace('\'', "''")
-    );
-    match sqlx::query(&insert_library_path).execute(conn).await {
-        Ok(_) => info!("library path successfully created"),
-        Err(e) => error!("failed to create library path : {}", e),
+    let path_in_base = get_library_path(conn).await;
+    if path_in_base.is_empty() {
+        let insert_library_path = format!(
+            "INSERT OR IGNORE INTO core(id, library_path) VALUES (1,'{}');",
+            library_path.to_string_lossy().replace('\'', "''")
+        );
+        match sqlx::query(&insert_library_path).execute(conn).await {
+            Ok(_) => info!("library path successfully created"),
+            Err(e) => error!("failed to create library path : {}", e),
+        }
+    // }
+    } else {
+        // TODO test si les path sont =
+        if path_in_base != library_path.to_string_lossy() {
+            error!("library path changed ! I need to purge database and recreate it from scratch");
+            match sqlx::query("DELETE FROM core ; DELETE FROM files ; DELETE FROM directories ; DELETE FROM covers ;")
+                .execute(conn)
+                .await
+            {
+                Ok(_) => info!("database successfully purged"),
+                Err(e) => error!("failed to purge database : {}", e),
+            }
+            init_database().await;
+        }
     }
 }
 
@@ -126,4 +143,95 @@ pub async fn get_library_path(conn: &Pool<Sqlite>) -> String {
             String::new()
         }
     }
+}
+
+/// get FileInfo from file path
+// path = `/fantasy/The Witcher/Sorceleur - L'Integrale - Andrzej Sapkowski.epub`
+pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileInfo {
+    // separe parent_path and filename
+    let mut path_elements: Vec<&str> = file_path.split('/').collect();
+    let file_name = match path_elements.last() {
+        Some(file_name) => *file_name,
+        None => "",
+    };
+    // remove file name (after last '/')
+    path_elements.pop();
+    let mut parent_path = get_library_path(conn).await;
+    for element in path_elements {
+        parent_path.push_str(element);
+        parent_path.push('/');
+    }
+    // remove last '/'
+    parent_path.pop();
+
+    let file: FileInfo = match sqlx::query_as(&format!(
+        "SELECT * FROM files WHERE parent_path = '{}' AND name = '{}';",
+        parent_path.replace('\'', "''"),
+        file_name.replace('\'', "''"),
+    ))
+    .fetch_one(conn)
+    .await
+    {
+        Ok(file_found) => file_found,
+        Err(e) => {
+            error!("unable to retrieve file infos from database : {}", e);
+            FileInfo::new()
+        }
+    };
+    file
+}
+
+/// get FileInfo from file id
+pub async fn get_files_from_id(id: &str, conn: &Pool<Sqlite>) -> FileInfo {
+    let file: FileInfo = match sqlx::query_as(&format!("SELECT * FROM files WHERE id = '{}';", id,))
+        .fetch_one(conn)
+        .await
+    {
+        Ok(file_found) => file_found,
+        Err(e) => {
+            error!("unable to retrieve file infos from database : {}", e);
+            FileInfo::new()
+        }
+    };
+    file
+}
+
+/// get currentPage from file id (can be usefull for sync)
+pub async fn _get_current_page_from_id(id: &str, conn: &Pool<Sqlite>) -> i32 {
+    let file: i32 = match sqlx::query(&format!(
+        "SELECT current_page FROM files WHERE id = '{}';",
+        id,
+    ))
+    .fetch_one(conn)
+    .await
+    {
+        Ok(file_found) => file_found.get("current_page"),
+        Err(e) => {
+            error!(
+                "unable to retrieve current page from database fore id {} : {}",
+                id, e
+            );
+            0
+        }
+    };
+    file
+}
+
+/// set currentPage from file id
+pub async fn set_current_page_from_id(id: &str, page: &i32, conn: &Pool<Sqlite>) {
+    match sqlx::query(&format!(
+        "UPDATE files SET current_page = '{}' WHERE id = '{}';",
+        page, id,
+    ))
+    .execute(conn)
+    .await
+    {
+        Ok(_) => debug!("current_page successfully setted to {} for id {}", page, id),
+        Err(e) => {
+            error!(
+                "unable to set current page from database fore id {} : {}",
+                id, e
+            );
+        }
+    };
 }
