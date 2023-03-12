@@ -1,7 +1,6 @@
-use crate::http_server::User;
 use crate::scanner::FileInfo;
+
 use epub::doc::EpubDoc;
-use image::ImageFormat;
 
 // pub fn raw(_user: User, _file: FileInfo) -> String {
 //     todo!();
@@ -15,34 +14,12 @@ use image::ImageFormat;
 // pub fn cbr(_user: User, _file: FileInfo) -> String {
 //     todo!();
 // }
+// pub fn cb7(_user: User, _file: FileInfo) -> String {
+//     todo!();
+// }
 // pub fn txt(_user: User, _file: FileInfo) -> String {
 //     todo!();
 // }
-
-// TODO handle error
-pub fn _extract_epub_cover(_user: &User, file: &FileInfo) -> image::DynamicImage {
-    let mut toto: image::DynamicImage = image::DynamicImage::new_luma8(0, 0);
-    if file.format == "epub" {
-        let full_path = format!("{}/{}", file.parent_path, file.name);
-        let mut doc = match EpubDoc::new(full_path) {
-            Ok(doc) => doc,
-            // TODO true error handling...
-            Err(_) => EpubDoc::new("toto").unwrap(),
-        };
-        // (Vec<u8>, String) : img and mime-type
-        let cover = if let Some(cover) = doc.get_cover() {
-            cover
-        } else {
-            (vec![], String::new())
-        };
-        // toto = image::load_from_memory_with_format(&cover.0, ImageFormat::Jpeg).unwrap();
-        match image::load_from_memory_with_format(&cover.0, ImageFormat::Jpeg) {
-            Ok(img) => toto = img,
-            Err(_) => toto = image::DynamicImage::new_luma8(0, 0),
-        };
-    }
-    toto
-}
 
 pub async fn epub(file: &FileInfo, page: i32) -> String {
     // open file
@@ -50,6 +27,7 @@ pub async fn epub(file: &FileInfo, page: i32) -> String {
     let mut doc = match EpubDoc::new(full_path) {
         Ok(doc) => doc,
         // TODO true error handling...
+        // suffit d'inclure le reste du code dans le arm Ok...
         Err(_) => EpubDoc::new("toto").unwrap(),
     };
     // set page at current_page
@@ -79,7 +57,7 @@ pub async fn epub(file: &FileInfo, page: i32) -> String {
         ",
         page, total_pages, file.parent_path, file.name, title,
     );
-    for _toto in 0..total_pages {
+    for _ in 0..total_pages {
         let current_page = doc.get_current_page();
         // let (page_content, _) = doc.get_current_str().unwrap();
         let page_content = match doc.get_current_with_epub_uris() {

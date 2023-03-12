@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# axum = { version = "0.6", features = ["macros"] }
 axum = "0.6"
 horrorshow = "0.8.4"
 http = "0.2.8"
@@ -16,6 +17,13 @@ ulid = "1.0.0"
 jwalk = "0.8.1"
 epub = "2.0.0"
 image = "0.24.5"
+base64 = "0.21.0"
+# need to update cairo-rs in poppler lib
+# > 0.15 KO because of expected `cairo::context::Context`, found `cairo::Context`
+poppler = { git = "https://git.thasmanie.fr/thasos/poppler-rs", branch = "updateCairo" }
+cairo-rs = { version = "0.17", features = ["png", "pdf"] }
+# poppler = "0.3.2"
+# cairo-rs = { version = "0.15", features = ["png", "pdf"] }
 [dependencies.axum-login]
 version = "0.4"
 features = ["sqlite"]

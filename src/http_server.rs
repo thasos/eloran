@@ -1,7 +1,7 @@
 use crate::html_render::{self, login_ok};
-use crate::reader;
 use crate::scanner::{DirectoryInfo, FileInfo};
 use crate::sqlite;
+use crate::{reader, scanner};
 
 use axum::http::header;
 use axum::http::StatusCode;
@@ -16,8 +16,8 @@ use axum_login::{
     secrecy::SecretVec,
     AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
 };
+use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
-use sqlx::SqlitePool;
 use std::fs;
 use std::io::Error;
 use tower::ServiceBuilder;
@@ -72,14 +72,11 @@ fn parse_credentials(body: &str) -> (String, String) {
 async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse {
     info!("get /login : {}", &body);
     let (username, password) = parse_credentials(&body);
-
-    // connect to db
-    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
-
+    let conn = sqlite::create_sqlite_pool().await;
     // get user from db
     // TODO hash password
-    Html(
-        match sqlx::query_as(&format!(
+    Html({
+        let login_response = match sqlx::query_as(&format!(
             "SELECT * FROM users WHERE name = '{}' AND password_hash = '{}'",
             &username, &password
         ))
@@ -96,8 +93,10 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
                 // TODO : vraie page
                 "user not found".to_string()
             }
-        },
-    )
+        };
+        conn.close().await;
+        login_response
+    })
 }
 
 async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
@@ -115,13 +114,89 @@ async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
     }
 }
 
+// #[axum::debug_handler]
+// TODO add cover, status (pages, read status, etc...)
+// TODO link "previous page"
+async fn infos_handler(
+    Extension(user): Extension<User>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let conn = sqlite::create_sqlite_pool().await;
+    let file = sqlite::get_files_from_id(&id, &conn).await;
+    // TODO move to cover handler
+    match file.format.as_str() {
+        "epub" => scanner::extract_epub_datas(&file, &conn).await,
+        "pdf" => scanner::extract_pdf_datas(&file, &conn).await,
+        _ => (),
+    };
+    conn.close().await;
+    Html(html_render::file_info(&user, &file))
+}
+
+async fn cover_handler(
+    Extension(_user): Extension<User>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let conn = sqlite::create_sqlite_pool().await;
+    let file = sqlite::get_files_from_id(&id, &conn).await;
+    debug!("get /cover/{}", id);
+    // check cover, try extracting if not present
+    if !sqlite::check_cover(&file, &conn).await {
+        match file.format.as_str() {
+            "epub" => scanner::extract_epub_datas(&file, &conn).await,
+            "pdf" => scanner::extract_pdf_datas(&file, &conn).await,
+            _ => (),
+        };
+    }
+    // return cover if present, default if not
+    let default_cover = {
+        let image_file_content = fs::read("src/images/green_book.svgz");
+        match image_file_content {
+            Ok(image) => (
+                StatusCode::OK,
+                [(header::CONTENT_TYPE, "image/svg+xml")],
+                [(header::CONTENT_ENCODING, "gzip")],
+                [(header::VARY, "Accept-Encoding")],
+                image,
+            )
+                .into_response(),
+            Err(_) => {
+                error!("default cover /images/green_book.svgz not found");
+                // TODO true 404
+                (StatusCode::NOT_FOUND, "image not found").into_response()
+            }
+        }
+    };
+
+    // get cover from database
+    // return default cover if problem with database or cover empty
+    let base64_cover = sqlite::get_cover_from_id(&file, &conn).await;
+    conn.close().await;
+    match base64_cover {
+        Some(base64_jpg) => {
+            if !base64_jpg.is_empty() {
+                let vec_cover = general_purpose::STANDARD.decode(base64_jpg).unwrap();
+                (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "image/jpeg")],
+                    vec_cover,
+                )
+                    .into_response()
+            } else {
+                default_cover
+            }
+        }
+        None => default_cover,
+    }
+}
+
 async fn reader_handler(
     Extension(user): Extension<User>,
     Path((id, page)): Path<(String, i32)>,
 ) -> impl IntoResponse {
     // TODO set current page to 0 if not provided ?
     // let page: i32 = page.unwrap_or(0);
-    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
+    let conn = sqlite::create_sqlite_pool().await;
     info!("get /reader/{} (page {}) : {}", &id, &page, &user.name);
     let file = sqlite::get_files_from_id(&id, &conn).await;
     // set page at current_page
@@ -137,6 +212,7 @@ async fn reader_handler(
         _ => "no yet supported".to_string(),
     };
 
+    conn.close().await;
     Html(html_render::ebook_reader(&user, &file, &reader, page))
 }
 
@@ -144,7 +220,7 @@ async fn library_handler(
     Extension(user): Extension<User>,
     path: Option<Path<String>>,
 ) -> impl IntoResponse {
-    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
+    let conn = sqlite::create_sqlite_pool().await;
     let library_path: String = sqlite::get_library_path(&conn).await;
     let path = match path {
         Some(path) => format!("/{}", path.as_str()),
@@ -155,7 +231,7 @@ async fn library_handler(
         info!("get /library{} : {}", path, user.name);
         // TODO set limit in conf
         let files_list: Vec<FileInfo> = match sqlx::query_as(&format!(
-            "SELECT * FROM files WHERE parent_path = '{library_path}{}' LIMIT 20",
+            "SELECT * FROM files WHERE parent_path = '{library_path}{}'",
             path.replace('\'', "''")
         ))
         .fetch_all(&conn)
@@ -175,7 +251,7 @@ async fn library_handler(
         info!("get /library{} : {}", path, user.name);
         // TODO set limit in conf
         let directories_list: Vec<DirectoryInfo> = match sqlx::query_as(&format!(
-            "SELECT * FROM directories WHERE parent_path = '{library_path}{}' LIMIT 20",
+            "SELECT * FROM directories WHERE parent_path = '{library_path}{}'",
             path.replace('\'', "''")
         ))
         .fetch_all(&conn)
@@ -190,7 +266,7 @@ async fn library_handler(
         };
         directories_list
     };
-
+    conn.close().await;
     Html(html_render::library(
         &user,
         path,
@@ -247,7 +323,6 @@ async fn get_images(Path(path): Path<String>) -> impl IntoResponse {
     match image_file_content {
         Ok(image) => (
             StatusCode::OK,
-            // [(header::CONTENT_TYPE, "image/svg+xml")],
             [(header::CONTENT_TYPE, "image/svg+xml")],
             [(header::CONTENT_ENCODING, "gzip")],
             [(header::VARY, "Accept-Encoding")],
@@ -255,7 +330,7 @@ async fn get_images(Path(path): Path<String>) -> impl IntoResponse {
         )
             .into_response(),
         Err(_) => {
-            error!("images {path} not found");
+            error!("image {path} not found");
             // TODO true 404
             (StatusCode::NOT_FOUND, "image not found").into_response()
         }
@@ -291,14 +366,18 @@ async fn create_router() -> Router {
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::User..,
         ))
-        // TODO create cover handler, store it in db, etc...
-        // .route("/covers/*path", get(cover_handler))
-        // .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
-        //     Role::User..,
-        // ))
+        .route("/infos/:id", get(infos_handler))
+        .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
+            Role::User..,
+        ))
+        .route("/cover/:id", get(cover_handler))
+        .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
+            Role::User..,
+        ))
         // 🔥 UNPROTECTED 🔥
         .route("/", get(get_root))
         .route("/css/*path", get(get_css))
+        // UI images, not covers
         .route("/images/*path", get(get_images))
         .route("/login", post(login_handler))
         .route("/logout", get(logout_handler))
@@ -308,11 +387,11 @@ async fn create_router() -> Router {
             ServiceBuilder::new()
                 .layer(session_layer)
                 .layer(auth_layer)
-                .map_response(|r: Response| {
-                    if r.status() == StatusCode::UNAUTHORIZED {
+                .map_response(|response: Response| {
+                    if response.status() == StatusCode::UNAUTHORIZED {
                         Redirect::to("/").into_response()
                     } else {
-                        r
+                        response
                     }
                 }),
         )

@@ -1,12 +1,14 @@
 use crate::sqlite;
+
+use cairo::{Context, Format, ImageSurface};
+use epub::doc::EpubDoc;
+use image::imageops::FilterType;
 use jwalk::WalkDirGeneric;
-use sqlx::pool::Pool;
-use sqlx::Row;
+use poppler::{PopplerDocument, PopplerPage};
 use sqlx::Sqlite;
-use sqlx::SqlitePool;
+use sqlx::{pool::Pool, Row};
 use std::path::Path;
-use std::time::Duration;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
 
 /// File struct, match database fields
@@ -22,11 +24,13 @@ pub struct FileInfo {
     pub scan_me: i8,
     pub added_date: i64,
     pub format: String,
+    // pub format: Format,
     // TODO make an Option<i64> if we want to print "unknow" in UI
     // i64 because no u64 with sqlite...
     pub size: i64,
     pub total_pages: i32,
     pub current_page: i32,
+    pub cover: String,
 }
 impl FileInfo {
     pub fn new() -> FileInfo {
@@ -39,12 +43,40 @@ impl FileInfo {
             read_status: 0,
             scan_me: 1,
             format: "".to_string(),
+            // format: Format::Other,
             size: 0,
             total_pages: 0,
             current_page: 0,
+            cover: "".to_string(),
         }
     }
 }
+
+// sqlx::FromRow not compatible with enums, need an alternative
+// #[derive(Debug, Default, Clone, PartialEq)]
+// /// Format supported
+// pub enum Format {
+//     Epub,
+//     Pdf,
+//     Cbr,
+//     Cbz,
+//     Txt,
+//     #[default]
+//     Other,
+// }
+// impl Format {
+//     pub fn as_str(&self) -> &str {
+//         match &self {
+//             Format::Epub => "epub",
+//             Format::Pdf => "pdf",
+//             Format::Cbr => "cbr",
+//             Format::Cbz => "cbz",
+//             Format::Txt => "txt",
+//             Format::Other => "Not supported",
+//             _ => "other",
+//         }
+//     }
+// }
 
 /// Directory struct, match database fields
 /// id|name|parent_path
@@ -81,9 +113,13 @@ fn extract_file_infos(entry: &Path) -> FileInfo {
         }
     };
     // file type
-    // TODO enum for file type (and "not supported" if fot in members)
     let format: Vec<&str> = filename.rsplit('.').collect();
     let format = format[0].to_string();
+    // TODO enum for file type (and "not supported" if fot in members)
+    // let format = match format[0] {
+    //     "epub" => Format::Epub,
+    //     _ => Format::Other,
+    // };
 
     // construct
     FileInfo {
@@ -98,11 +134,13 @@ fn extract_file_infos(entry: &Path) -> FileInfo {
         size: size.unwrap_or(0) as i64,
         total_pages: 0,
         current_page: 0,
+        cover: "".to_string(),
     }
 }
 
 /// when a new file is found or uploaded, insert all values found
-async fn insert_new_file(file: &FileInfo, ulid: Option<&str>, conn: &Pool<Sqlite>) {
+/// return file id
+async fn insert_new_file(file: &FileInfo, ulid: Option<&str>, conn: &Pool<Sqlite>) -> String {
     // generate ulid if needed
     let ulid = match ulid {
         Some(ulid) => ulid.to_string(),
@@ -129,6 +167,7 @@ async fn insert_new_file(file: &FileInfo, ulid: Option<&str>, conn: &Pool<Sqlite
         }
         Err(e) => error!("file infos insert failed : {e}"),
     };
+    ulid
 }
 
 /// delete a file in database
@@ -404,7 +443,7 @@ fn walk_recent_files(
 // TODO check total number file found, vs total in db (for insert errors) ?
 pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
     // register library_path in database if not present
-    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
+    let conn = sqlite::create_sqlite_pool().await;
 
     // main loop
     loop {
@@ -492,17 +531,17 @@ pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
                     let filename = &file_infos.name;
                     let parent_path = &file_infos.parent_path;
                     let file_found = check_if_file_exists(parent_path, filename, &conn).await;
-                    // new file
                     if file_found.is_empty() {
-                        warn!("new file found : {}/{}", parent_path, filename);
+                        // new file
+                        info!("new file found : {}/{}", parent_path, filename);
                         insert_new_file(&file_infos, None, &conn).await;
-                        // 1 file found, ok update it
                     } else if file_found.len() == 1 {
-                        warn!("file modified : {}/{}", parent_path, filename);
+                        // 1 file found, ok update it
+                        info!("file modified : {}/{}", parent_path, filename);
                         let ulid_found = &file_found[0].id;
                         insert_new_file(&file_infos, Some(ulid_found), &conn).await;
-                        // multiple id for a file ? wrong !!
                     } else {
+                        // multiple id for a file ? wrong !!
                         // TODO propose repair or full rescan
                         error!(
                             "base possibly corrupted, multiple id found for file {}/{}",
@@ -516,9 +555,6 @@ pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
             // TODO comment check si successfull ?
             // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
             update_last_successfull_scan_date(&conn).await;
-
-            // launch extractor
-            // file_extractor_routine().await;
         }
         // TODO true schedule, last scan status in db...
         debug!(
@@ -529,78 +565,80 @@ pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
     }
 }
 
-/// extract images and metadatas form files
-/// based on file list generated with scan_routine fn
-async fn _file_extractor_routine() {
-    info!("start file extractor routine");
-    // create pool connexion
-    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
-    loop {
-        // create file list from database
-        let file_to_scan: Vec<FileInfo> =
-            match sqlx::query_as("SELECT * FROM files WHERE scan_me = '1';")
-                .fetch_all(&conn)
-                .await
-            {
-                Ok(file_found) => file_found,
-                Err(e) => {
-                    error!("unable to retrieve file infos from database : {}", e);
-                    vec![]
-                }
-            };
-        if file_to_scan.is_empty() {
-            info!("no need to extract info from files");
+// TODO error/warn message for each `None` in arms
+pub async fn extract_pdf_datas(file: &FileInfo, conn: &Pool<Sqlite>) {
+    // TODO separe cover and total_pages
+    let full_path = format!("{}/{}", file.parent_path, file.name);
+    let mut total_pages = 0;
+    let mut cover: Option<image::DynamicImage> = None;
+    // no await in this scope, cause error trait `Handler<_, _, _>` is not implemented
+    // use macro #[axum::debug_handler] on handler to see details
+    if let Ok(doc) = PopplerDocument::new_from_file(&full_path, "") {
+        // extract 1st page as cover
+        // TODO error handling
+        let first_page: PopplerPage = doc.get_page(0).expect("get_page");
+        let (width, height) = first_page.get_size();
+        let surface = ImageSurface::create(Format::ARgb32, width as i32, height as i32)
+            .expect("create ImageSurface");
+        let context = Context::new(&surface).expect("new Context");
+        context.save().expect("save Context");
+        first_page.render(&context);
+        context.restore().expect("restore Context");
+        context.show_page().expect("show_page Context");
+        let mut vec_cover: Vec<u8> = vec![];
+        surface.write_to_png(&mut vec_cover).expect("write_to_png");
+        // resize and return image
+        match image::load_from_memory(&vec_cover) {
+            Ok(img) => cover = Some(resize_cover(img)),
+            Err(_) => {
+                warn!("I can't decode cover image for file {full_path}");
+            }
+        };
+        // total pages
+        total_pages = doc.get_n_pages();
+    };
+    if Some(&cover).is_some() {
+        sqlite::insert_cover(file, cover.unwrap(), conn).await;
+    }
+    sqlite::insert_total_pages(file, total_pages as i32, conn).await;
+}
+
+// TODO error/warn message for each `None` in arms
+pub async fn extract_epub_datas(file: &FileInfo, conn: &Pool<Sqlite>) {
+    let full_path = format!("{}/{}", file.parent_path, file.name);
+    if let Ok(mut doc) = EpubDoc::new(&full_path) {
+        // extract cover
+        let vec_cover = if let Some(cover) = doc.get_cover() {
+            // (Vec<u8>, String) : img and mime-type
+            // we only need the first tuple element
+            cover.0
         } else {
-            // TODO multi threads ?
-            for file in file_to_scan {
-                debug!(
-                    "need to extract infos from file {}/{}",
-                    file.parent_path, file.name
-                );
-                // insert covert in blob
-                // TODO true cover
-                let toto = "blooooooooooooob";
-                match sqlx::query(&format!(
-                    "INSERT OR REPLACE INTO covers (id, cover)
-                    VALUES ('{}', '{}');",
-                    file.id, toto
-                ))
-                .execute(&conn)
-                .await
-                {
-                    Ok(_) => {
-                        debug!("cover updated for file {}/{}", file.parent_path, file.name);
-                        // if covert insert ok, set scan_me to 0
-                        match sqlx::query(&format!(
-                            "UPDATE files SET scan_me = '0' WHERE id = '{}';",
-                            file.id
-                        ))
-                        .execute(&conn)
-                        .await
-                        {
-                            Ok(_) => (),
-                            Err(e) => debug!(
-                                "failed to update scan_me flag for file {}/{} : {e}",
-                                file.parent_path, file.name
-                            ),
-                        }
-                    }
-                    Err(e) => debug!(
-                        "failed to update covers for file {}/{} : {e}",
-                        file.parent_path, file.name
-                    ),
-                };
+            // (vec![], String::new())
+            vec![]
+        };
+        match image::load_from_memory(&vec_cover) {
+            // match image::load_from_memory(&cover.0) {
+            Ok(img) => {
+                let cover = resize_cover(img);
+                sqlite::insert_cover(file, cover, conn).await;
+            }
+            Err(_) => {
+                warn!("I can't decode cover image for file {full_path}");
             }
         }
+        // total pages
+        let total_pages = doc.get_num_pages();
+        sqlite::insert_total_pages(file, total_pages as i32, conn).await;
+    };
+}
 
-        // TODO true schedule, last scan status in db...
-        let sleep_time = Duration::from_secs(3);
-        debug!(
-            "stop exctracting, sleeping for {} seconds",
-            sleep_time.as_secs()
-        );
-        tokio::time::sleep(sleep_time).await;
-    }
+// TODO easy testing here...
+pub fn resize_cover(cover: image::DynamicImage) -> image::DynamicImage {
+    // see doc https://docs.rs/image/0.24.5/image/imageops/enum.FilterType.html
+    // for quality of resize
+    // TODO do not keep ratio ? crop ? the max heigh is the most important
+    // cover.resize_to_fill(150, 230, FilterType::Triangle)
+    cover.resize_to_fill(150, 230, FilterType::Triangle)
 }
 
 #[cfg(test)]
@@ -659,6 +697,7 @@ mod tests {
             size: 10,
             total_pages: 0,
             current_page: 0,
+            cover: "".to_string(),
             // id and added_date are random, so we take them from validation_file
             added_date: validation_file.added_date.clone(),
             id: validation_file.id.clone(),
@@ -682,11 +721,12 @@ mod tests {
             size: 10,
             total_pages: 0,
             current_page: 0,
+            cover: "blablabla".to_string(),
             // id and added_date are random, so we take them from validation_file
             added_date: 666,
             id: "666".to_string(),
         };
-        let conn = SqlitePool::connect(DB_URL).await.unwrap();
+        let conn = sqlite::create_sqlite_pool().await;
         insert_new_file(&skeletion_file, None, &conn).await;
         let file_from_base: Vec<FileInfo> = match sqlx::query_as(&format!(
             "SELECT * FROM files WHERE parent_path = '{}'",

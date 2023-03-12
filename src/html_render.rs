@@ -1,5 +1,6 @@
 use crate::scanner::FileInfo;
 use crate::{http_server::User, scanner::DirectoryInfo};
+
 use horrorshow::{helper::doctype, Raw, Template};
 
 fn header<'a>() -> Box<dyn horrorshow::RenderBox + 'a> {
@@ -58,6 +59,20 @@ pub fn logout(user: &User) -> String {
         p { a(href="/") : "return home" }
     };
 
+    render(body_content)
+}
+
+pub fn file_info(user: &User, file: &FileInfo) -> String {
+    let menu = menu(user.clone());
+    let file = file.clone();
+    let body_content = box_html! {
+        : menu;
+        div(id="infos") {
+            h2(style="text-align: center;") {
+                a(href=format!("/read/{}/{}", file.id, file.current_page)) : "read file";
+            }
+        }
+    };
     render(body_content)
 }
 
@@ -127,18 +142,20 @@ pub fn library(
             // image gallery
             // https://www.w3schools.com/Css/css_image_gallery.asp
             @ for directory in &directories_list {
-                div(class="gallery") {
+                div(class="gallery", style="box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);") {
                     a(href=format!("/library{}/{}", &current_path, &directory.name)) {
-                        img(src="/images/folder.svgz", alt="folder", width="600", height="400")
+                        img(src="/images/folder.svgz", alt="folder", width="150", height="230")
                         : format_args!("{}", directory.name)
                     }
                 }
             }
             @ for file in &files_list {
-                div(class="gallery") {
+                div(class="gallery", style="box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);") {
                     // TODO add field `current page` instead of page 0...
-                    a(href=format!("/read/{}/{}", &file.id, &file.current_page)) {
-                        img(src="/images/green_book.svgz", alt="green book", width="600", height="400")
+                    a(href=format!("/infos/{}", &file.id)) {
+                        // TODO if cover found, print it !
+                        // img(src=format!("{}", display_cover(file)), alt="green book", width="150", height="230")
+                        img(src=format!("/cover/{}", &file.id), alt="green book", width="150", height="230")
                         : format_args!("{}", file.name)
                     }
                 }
@@ -147,6 +164,16 @@ pub fn library(
     };
     render(body_content)
 }
+
+// fn display_cover(file: &FileInfo) -> String {
+//     if file.cover.is_empty() {
+//         "/images/green_book.svgz".to_string()
+//     } else {
+//         format!("data:image/jpeg;base64,{}", file.cover)
+//         // TODO activate
+//         // format!("/covers/{}", file.id)
+//     }
+// }
 
 fn menu<'a>(user: User) -> Box<dyn horrorshow::RenderBox + 'a> {
     debug!("fn menu");

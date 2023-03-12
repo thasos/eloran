@@ -1,18 +1,30 @@
 use crate::scanner::FileInfo;
 
-use sqlx::pool::Pool;
+use base64::{engine::general_purpose, Engine as _};
+use image::{DynamicImage, ImageOutputFormat};
 use sqlx::sqlite::SqlitePoolOptions;
-use sqlx::Row;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+use sqlx::{pool::Pool, Row};
 use std::fs;
+use std::io::Cursor;
 use std::path::Path;
+use std::process;
+use std::time::Duration;
 
 pub async fn create_sqlite_pool() -> Pool<Sqlite> {
-    SqlitePoolOptions::new()
+    match SqlitePoolOptions::new()
+        .max_lifetime(Duration::from_secs(30))
+        .idle_timeout(Duration::from_secs(5))
         // TODO use const
         .connect(crate::DB_URL)
         .await
-        .unwrap()
+    {
+        Ok(pool) => pool,
+        Err(e) => {
+            error!("can't create pool connection : {e}");
+            process::exit(255);
+        }
+    }
 }
 
 pub async fn init_database() {
@@ -44,6 +56,8 @@ pub async fn init_database() {
     }
     // tables
     // TODO check if already created ?
+    // TODO use after connect ?
+    // https://docs.rs/sqlx/0.6.2/sqlx/pool/struct.PoolOptions.html#method.after_connect
     let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
     let schema = r#"
 CREATE TABLE IF NOT EXISTS users (
@@ -67,7 +81,8 @@ CREATE TABLE IF NOT EXISTS files (
   format TEXT DEFAULT NULL,
   size INTEGER NOT NULL DEFAULT 0,
   total_pages INTEGER NOT NULL DEFAULT 0,
-  current_page INTEGER NOT NULL DEFAULT 0
+  current_page INTEGER NOT NULL DEFAULT 0,
+  cover TEXT DEFAULT NULL
 );
 CREATE TABLE IF NOT EXISTS core (
   id INTEGER PRIMARY KEY NOT NULL,
@@ -75,15 +90,12 @@ CREATE TABLE IF NOT EXISTS core (
   last_successfull_scan_date INTEGER NOT NULL DEFAULT 0,
   last_successfull_extract_date INTEGER NOT NULL DEFAULT 0
 );
-CREATE TABLE IF NOT EXISTS covers (
-  id ULID PRIMARY KEY NOT NULL,
-  cover BLOB DEFAULT NULL
-);
     "#;
     match sqlx::query(schema).execute(&conn).await {
         Ok(_) => info!("tables successfully created"),
         Err(e) => error!("failed to create tables : {}", e),
-    }
+    };
+    conn.close().await;
 }
 
 pub async fn init_users(db_url: &str) {
@@ -116,7 +128,7 @@ pub async fn set_library_path(library_path: &Path, conn: &Pool<Sqlite>) {
         // TODO test si les path sont =
         if path_in_base != library_path.to_string_lossy() {
             error!("library path changed ! I need to purge database and recreate it from scratch");
-            match sqlx::query("DELETE FROM core ; DELETE FROM files ; DELETE FROM directories ; DELETE FROM covers ;")
+            match sqlx::query("DELETE FROM core ; DELETE FROM files ; DELETE FROM directories ;")
                 .execute(conn)
                 .await
             {
@@ -183,6 +195,9 @@ pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileI
 
 /// get FileInfo from file id
 pub async fn get_files_from_id(id: &str, conn: &Pool<Sqlite>) -> FileInfo {
+    // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+    // TODO ⚠️ select all but cover ⚠️  no need it in memory...
+    // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
     let file: FileInfo = match sqlx::query_as(&format!("SELECT * FROM files WHERE id = '{}';", id,))
         .fetch_one(conn)
         .await
@@ -234,4 +249,104 @@ pub async fn set_current_page_from_id(id: &str, page: &i32, conn: &Pool<Sqlite>)
             );
         }
     };
+}
+
+// TODO easy test here
+fn image_to_base64(img: &DynamicImage) -> String {
+    let mut image_data: Vec<u8> = Vec::new();
+    img.write_to(
+        &mut Cursor::new(&mut image_data),
+        ImageOutputFormat::Jpeg(75),
+    )
+    .unwrap();
+    general_purpose::STANDARD.encode(image_data)
+}
+
+/// insert cover for a file
+pub async fn insert_cover(file: &FileInfo, cover: DynamicImage, conn: &Pool<Sqlite>) {
+    let base64_cover = image_to_base64(&cover);
+    match sqlx::query(&format!(
+        "UPDATE files SET cover = '{}' WHERE id = '{}';",
+        base64_cover, file.id
+    ))
+    .execute(conn)
+    .await
+    {
+        Ok(_) => debug!("cover updated for file {}/{}", file.parent_path, file.name),
+        Err(e) => error!(
+            "failed to update covers for file {}/{} : {e}",
+            file.parent_path, file.name
+        ),
+    };
+}
+
+/// insert total_pages for a file
+pub async fn insert_total_pages(file: &FileInfo, total_pages: i32, conn: &Pool<Sqlite>) {
+    match sqlx::query(&format!(
+        "UPDATE files SET total_pages = '{}' WHERE id = '{}';",
+        total_pages, file.id
+    ))
+    .execute(conn)
+    .await
+    {
+        Ok(_) => debug!(
+            "total_pages updated for file {}/{}",
+            file.parent_path, file.name
+        ),
+        Err(e) => error!(
+            "failed to update total_pages for file {}/{} : {e}",
+            file.parent_path, file.name
+        ),
+    };
+}
+
+/// check in cover exists for a file
+pub async fn check_cover(file: &FileInfo, conn: &Pool<Sqlite>) -> bool {
+    match sqlx::query(&format!(
+        "SELECT cover FROM files WHERE id = '{}';",
+        file.id
+    ))
+    .fetch_one(conn)
+    .await
+    {
+        Ok(raw_cover) => {
+            let base64_cover: String = raw_cover.get("cover");
+            if base64_cover.is_empty() {
+                debug!(
+                    "no cover in base for file {}/{}",
+                    file.parent_path, file.name
+                );
+                false
+            } else {
+                true
+            }
+        }
+        Err(e) => {
+            error!(
+                "failed to get cover for file {}/{} : {e}",
+                file.parent_path, file.name
+            );
+            false
+        }
+    }
+}
+
+/// get cover from id
+pub async fn get_cover_from_id(file: &FileInfo, conn: &Pool<Sqlite>) -> Option<String> {
+    match sqlx::query(&format!(
+        "SELECT cover FROM files WHERE id = '{}';",
+        file.id
+    ))
+    .fetch_one(conn)
+    .await
+    {
+        Ok(cover) => Some(cover.get("cover")),
+        Err(e) => {
+            error!(
+                "failed to get cover for file {}/{} : {e}",
+                file.parent_path, file.name
+            );
+            None
+        }
+    }
 }
