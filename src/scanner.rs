@@ -32,7 +32,6 @@ pub struct FileInfo {
     pub size: i64,
     pub total_pages: i32,
     pub current_page: i32,
-    pub cover: String,
 }
 impl FileInfo {
     pub fn new() -> FileInfo {
@@ -49,7 +48,6 @@ impl FileInfo {
             size: 0,
             total_pages: 0,
             current_page: 0,
-            cover: "".to_string(),
         }
     }
 }
@@ -136,7 +134,6 @@ fn extract_file_infos(entry: &Path) -> FileInfo {
         size: size.unwrap_or(0) as i64,
         total_pages: 0,
         current_page: 0,
-        cover: "".to_string(),
     }
 }
 

@@ -81,7 +81,10 @@ CREATE TABLE IF NOT EXISTS files (
   format TEXT DEFAULT NULL,
   size INTEGER NOT NULL DEFAULT 0,
   total_pages INTEGER NOT NULL DEFAULT 0,
-  current_page INTEGER NOT NULL DEFAULT 0,
+  current_page INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS covers (
+  id ULID PRIMARY KEY NOT NULL,
   cover TEXT DEFAULT NULL
 );
 CREATE TABLE IF NOT EXISTS core (
@@ -266,8 +269,8 @@ pub fn image_to_base64(img: &DynamicImage) -> String {
 pub async fn insert_cover(file: &FileInfo, cover: DynamicImage, conn: &Pool<Sqlite>) {
     let base64_cover = image_to_base64(&cover);
     match sqlx::query(&format!(
-        "UPDATE files SET cover = '{}' WHERE id = '{}';",
-        base64_cover, file.id
+        "INSERT OR REPLACE INTO covers(id,cover) VALUES ('{}','{}');",
+        file.id, base64_cover
     ))
     .execute(conn)
     .await
@@ -303,7 +306,7 @@ pub async fn insert_total_pages(file: &FileInfo, total_pages: i32, conn: &Pool<S
 /// check in cover exists for a file
 pub async fn check_cover(file: &FileInfo, conn: &Pool<Sqlite>) -> bool {
     match sqlx::query(&format!(
-        "SELECT cover FROM files WHERE id = '{}';",
+        "SELECT cover FROM covers WHERE id = '{}';",
         file.id
     ))
     .fetch_one(conn)
@@ -334,7 +337,7 @@ pub async fn check_cover(file: &FileInfo, conn: &Pool<Sqlite>) -> bool {
 /// get cover from id
 pub async fn get_cover_from_id(file: &FileInfo, conn: &Pool<Sqlite>) -> Option<String> {
     match sqlx::query(&format!(
-        "SELECT cover FROM files WHERE id = '{}';",
+        "SELECT cover FROM covers WHERE id = '{}';",
         file.id
     ))
     .fetch_one(conn)
