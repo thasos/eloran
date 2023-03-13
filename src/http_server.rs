@@ -202,18 +202,43 @@ async fn reader_handler(
     // set page at current_page
     sqlite::set_current_page_from_id(&file.id, &page, &conn).await;
 
-    let reader = match file.format.as_str() {
-        "epub" => reader::epub(&file, page).await,
-        // "pdf" => reader::pdf(&user, file),
+    let response = match file.format.as_str() {
+        "epub" => {
+            let epub_reader = reader::epub(&file, page).await;
+            Html(html_render::ebook_reader(&user, &file, &epub_reader, page)).into_response()
+        }
+        "pdf" => {
+            let pdf_file = fs::read(format!("{}/{}", &file.parent_path, &file.name));
+            match pdf_file {
+                Ok(pdf_file) => (
+                    StatusCode::OK,
+                    [(header::CONTENT_TYPE, "application/pdf")],
+                    pdf_file,
+                )
+                    .into_response(),
+                Err(e) => {
+                    error!(
+                        "pdf file {}/{} not found : {e}",
+                        &file.parent_path, &file.name
+                    );
+                    // TODO true 404
+                    (StatusCode::NOT_FOUND, "file not found").into_response()
+                }
+            }
+        }
         // "cbr" => reader::cbr(&user, file),
-        // "cbz" => reader::cbz(&user, file),
+        "cbz" | "cbr" => {
+            let comic_reader = reader::comics(&file, page).await;
+            Html(html_render::ebook_reader(&user, &file, &comic_reader, page)).into_response()
+        }
+        // TODO txt and raw readers
         // "txt" => reader::txt(&user, file),
         // "raw" => reader::raw(&user, file),
-        _ => "no yet supported".to_string(),
+        // TODO real rendered page
+        _ => Html("no yet supported".to_string()).into_response(),
     };
-
     conn.close().await;
-    Html(html_render::ebook_reader(&user, &file, &reader, page))
+    response
 }
 
 async fn library_handler(
@@ -344,7 +369,6 @@ async fn create_router() -> Router {
     // TODO cookies options (secure, ttl, ...) :
     // https://docs.rs/axum-sessions/0.4.1/axum_sessions/struct.SessionLayer.html#implementations
     let session_layer = SessionLayer::new(session_store, &secret).with_secure(false);
-    // TODO use fn create_sqlite_pool
     let pool = sqlite::create_sqlite_pool().await;
     let user_store = SqliteStore::<User, Role>::new(pool);
     let auth_layer = AuthLayer::new(user_store, &secret);

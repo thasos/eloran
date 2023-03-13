@@ -22,6 +22,7 @@ base64 = "0.21.0"
 # > 0.15 KO because of expected `cairo::context::Context`, found `cairo::Context`
 poppler = { git = "https://git.thasmanie.fr/thasos/poppler-rs", branch = "updateCairo" }
 cairo-rs = { version = "0.17", features = ["png", "pdf"] }
+compress-tools = "0.14.0"
 # poppler = "0.3.2"
 # cairo-rs = { version = "0.15", features = ["png", "pdf"] }
 [dependencies.axum-login]

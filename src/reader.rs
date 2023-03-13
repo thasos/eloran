@@ -1,25 +1,93 @@
 use crate::scanner::FileInfo;
+use crate::sqlite;
 
+use compress_tools::*;
 use epub::doc::EpubDoc;
+use std::fs::File;
 
 // pub fn raw(_user: User, _file: FileInfo) -> String {
-//     todo!();
-// }
-// pub fn pdf(_user: User, _file: FileInfo) -> String {
-//     todo!();
-// }
-// pub fn cbz(_user: User, _file: FileInfo) -> String {
-//     todo!();
-// }
-// pub fn cbr(_user: User, _file: FileInfo) -> String {
-//     todo!();
-// }
-// pub fn cb7(_user: User, _file: FileInfo) -> String {
 //     todo!();
 // }
 // pub fn txt(_user: User, _file: FileInfo) -> String {
 //     todo!();
 // }
+
+// TODO load previous and next images for smoother experience ?
+pub async fn comics(file: &FileInfo, page: i32) -> String {
+    info!("reading {}/{} (page {page}", file.parent_path, file.name);
+
+    // try ArchiveIterator... read OK
+    let compressed_comic_file =
+        File::open(format!("{}/{}", file.parent_path, file.name)).expect("file open");
+    let mut comic_iter = ArchiveIterator::from_read(&compressed_comic_file).expect("iterator");
+    // TODO total_pages = number of file in archive
+    // let total = comit_iter.count();
+    let mut file_path_in_archive = String::default();
+    let mut vec_comic_page: Vec<u8> = Vec::default();
+    // the ArchiveIterator index does not fit the files index in archive so I have to create my own
+    let mut index: usize = 0;
+    for content in &mut comic_iter {
+        match content {
+            ArchiveContents::StartOfEntry(s, _) => file_path_in_archive = s,
+            ArchiveContents::DataChunk(vec_chunk) => {
+                // add chunks in the image Vec
+                error!("index : {index}, page : {page}");
+                if index == page as usize {
+                    for chunk in vec_chunk {
+                        vec_comic_page.push(chunk);
+                    }
+                }
+            }
+            ArchiveContents::EndOfEntry => {
+                // increase index in case of new file
+                index += 1;
+            }
+            ArchiveContents::Err(e) => {
+                error!(
+                    "can't extract path {} in comic file {}/{} {e}",
+                    file_path_in_archive, file.parent_path, file.name
+                );
+            }
+        }
+    }
+    comic_iter.close().unwrap();
+
+    // // try uncompress_archive_file
+    // // read KO on cbr, "path not found" despite retrieve it from archive
+    // let mut compressed_comic_file =
+    //     File::open(format!("{}/{}", file.parent_path, file.name)).expect("file open");
+    // let file_list = list_archive_files(&mut compressed_comic_file).expect("list_archive_files");
+    // dbg!(&file_list);
+    // let file_path_of_page_number = &file_list[page as usize];
+    // let mut vec_comic_page: Vec<u8> = Vec::default();
+    // debug!(
+    //     "trying to decompress {}/{}, with file path {}",
+    //     &file.parent_path, &file.name, &file_path_of_page_number
+    // );
+    // match uncompress_archive_file(
+    //     &mut compressed_comic_file,
+    //     &mut vec_comic_page,
+    //     file_path_of_page_number,
+    // ) {
+    //     Ok(_) => (),
+    //     Err(e) => error!(
+    //         "cannot uncompress_archive_file {}/{} : {e}",
+    //         file.parent_path, file.name
+    //     ),
+    // }
+
+    // return img in base64
+    match image::load_from_memory(&vec_comic_page) {
+        Ok(img) => {
+            format!(
+                // TODO if not jpeg ???
+                "<img src=\"data:image/jpeg;base64,{}\")",
+                sqlite::image_to_base64(&img)
+            )
+        }
+        Err(_) => "error comic".to_string(),
+    }
+}
 
 pub async fn epub(file: &FileInfo, page: i32) -> String {
     // open file
