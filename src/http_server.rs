@@ -123,16 +123,11 @@ async fn infos_handler(
 ) -> impl IntoResponse {
     let conn = sqlite::create_sqlite_pool().await;
     let file = sqlite::get_files_from_id(&id, &conn).await;
-    // TODO move to cover handler
-    match file.format.as_str() {
-        "epub" => scanner::extract_epub_datas(&file, &conn).await,
-        "pdf" => scanner::extract_pdf_datas(&file, &conn).await,
-        _ => (),
-    };
     conn.close().await;
     Html(html_render::file_info(&user, &file))
 }
 
+// #[axum::debug_handler]
 async fn cover_handler(
     Extension(_user): Extension<User>,
     Path(id): Path<String>,
@@ -142,11 +137,15 @@ async fn cover_handler(
     debug!("get /cover/{}", id);
     // check cover, try extracting if not present
     if !sqlite::check_cover(&file, &conn).await {
-        match file.format.as_str() {
-            "epub" => scanner::extract_epub_datas(&file, &conn).await,
-            "pdf" => scanner::extract_pdf_datas(&file, &conn).await,
-            _ => (),
-        };
+        // no async in this match because of lib compress_tool, future will be not send
+        let cover: image::DynamicImage = match file.format.as_str() {
+            "epub" => scanner::extract_epub_cover(&file),
+            "pdf" => scanner::extract_pdf_cover(&file),
+            "cbz" | "cbr" | "cb7" => scanner::extract_comic_cover(&file),
+            _ => None,
+        }
+        .expect("no cover found");
+        sqlite::insert_cover(&file, cover, &conn).await;
     }
     // return cover if present, default if not
     let default_cover = {
@@ -227,7 +226,7 @@ async fn reader_handler(
             }
         }
         // "cbr" => reader::cbr(&user, file),
-        "cbz" | "cbr" => {
+        "cbz" | "cbr" | "cb7" => {
             let comic_reader = reader::comics(&file, page).await;
             Html(html_render::ebook_reader(&user, &file, &comic_reader, page)).into_response()
         }

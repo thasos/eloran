@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# axum = { version = "0.6", features = ["macros"] }
-axum = "0.6"
+axum = { version = "0.6", features = ["macros"] }
+# axum = "0.6"
 horrorshow = "0.8.4"
 http = "0.2.8"
 body = "0.1.1"

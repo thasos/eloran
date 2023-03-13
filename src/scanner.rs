@@ -1,12 +1,14 @@
 use crate::sqlite;
 
 use cairo::{Context, Format, ImageSurface};
+use compress_tools::*;
 use epub::doc::EpubDoc;
 use image::imageops::FilterType;
 use jwalk::WalkDirGeneric;
 use poppler::{PopplerDocument, PopplerPage};
 use sqlx::Sqlite;
 use sqlx::{pool::Pool, Row};
+use std::fs::File;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
@@ -140,17 +142,18 @@ fn extract_file_infos(entry: &Path) -> FileInfo {
 
 /// when a new file is found or uploaded, insert all values found
 /// return file id
-async fn insert_new_file(file: &FileInfo, ulid: Option<&str>, conn: &Pool<Sqlite>) -> String {
+async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Pool<Sqlite>) {
     // generate ulid if needed
     let ulid = match ulid {
         Some(ulid) => ulid.to_string(),
         None => Ulid::new().to_string(),
     };
+    file.id = ulid;
     // prepare query
     let insert_query = format!(
         "INSERT OR REPLACE INTO files(id, name, parent_path, size, added_date, scan_me, read_status, format, current_page, total_pages)
                     VALUES('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
-        ulid,
+        file.id,
         // escape ' with '' in sqlite...
         file.name.replace('\'', "''"),
         file.parent_path.replace('\'', "''"),
@@ -167,7 +170,7 @@ async fn insert_new_file(file: &FileInfo, ulid: Option<&str>, conn: &Pool<Sqlite
         }
         Err(e) => error!("file infos insert failed : {e}"),
     };
-    ulid
+    extract_page_number(file, conn).await;
 }
 
 /// delete a file in database
@@ -527,19 +530,19 @@ pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
             // loop on recent files list
             for entry in recent_file_list.into_iter().flatten() {
                 if entry.client_state {
-                    let file_infos = extract_file_infos(entry.path().as_path());
+                    let mut file_infos = extract_file_infos(entry.path().as_path());
                     let filename = &file_infos.name;
                     let parent_path = &file_infos.parent_path;
                     let file_found = check_if_file_exists(parent_path, filename, &conn).await;
                     if file_found.is_empty() {
                         // new file
                         info!("new file found : {}/{}", parent_path, filename);
-                        insert_new_file(&file_infos, None, &conn).await;
+                        insert_new_file(&mut file_infos, None, &conn).await;
                     } else if file_found.len() == 1 {
                         // 1 file found, ok update it
                         info!("file modified : {}/{}", parent_path, filename);
                         let ulid_found = &file_found[0].id;
-                        insert_new_file(&file_infos, Some(ulid_found), &conn).await;
+                        insert_new_file(&mut file_infos, Some(ulid_found), &conn).await;
                     } else {
                         // multiple id for a file ? wrong !!
                         // TODO propose repair or full rescan
@@ -565,11 +568,29 @@ pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
     }
 }
 
-// TODO error/warn message for each `None` in arms
-pub async fn extract_pdf_datas(file: &FileInfo, conn: &Pool<Sqlite>) {
-    // TODO separe cover and total_pages
+pub async fn extract_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
+    match file.format.as_str() {
+        "epub" => extract_epub_page_number(file, conn).await,
+        "pdf" => extract_pdf_page_number(file, conn).await,
+        "cbz" | "cbr" | "cb7" => extract_comic_page_number(file, conn).await,
+        _ => (),
+    }
+}
+
+pub async fn extract_pdf_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
     let full_path = format!("{}/{}", file.parent_path, file.name);
     let mut total_pages = 0;
+    // no await in this scope, cause error trait `Handler<_, _, _>` is not implemented
+    // use macro #[axum::debug_handler] on handler to see details
+    if let Ok(doc) = PopplerDocument::new_from_file(&full_path, "") {
+        total_pages = doc.get_n_pages();
+    };
+    sqlite::insert_total_pages(file, total_pages as i32, conn).await;
+}
+
+// TODO error/warn message for each `None` in arms
+pub fn extract_pdf_cover(file: &FileInfo) -> Option<image::DynamicImage> {
+    let full_path = format!("{}/{}", file.parent_path, file.name);
     let mut cover: Option<image::DynamicImage> = None;
     // no await in this scope, cause error trait `Handler<_, _, _>` is not implemented
     // use macro #[axum::debug_handler] on handler to see details
@@ -594,17 +615,26 @@ pub async fn extract_pdf_datas(file: &FileInfo, conn: &Pool<Sqlite>) {
                 warn!("I can't decode cover image for file {full_path}");
             }
         };
-        // total pages
-        total_pages = doc.get_n_pages();
-    };
-    if Some(&cover).is_some() {
-        sqlite::insert_cover(file, cover.unwrap(), conn).await;
+        cover
+    } else {
+        None
     }
-    sqlite::insert_total_pages(file, total_pages as i32, conn).await;
+    // if Some(&cover).is_some() {
+    //     sqlite::insert_cover(file, cover.unwrap(), conn).await;
+    // }
+    // sqlite::insert_total_pages(file, total_pages as i32, conn).await;
+}
+
+pub async fn extract_epub_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
+    let full_path = format!("{}/{}", file.parent_path, file.name);
+    if let Ok(doc) = EpubDoc::new(&full_path) {
+        let total_pages = doc.get_num_pages();
+        sqlite::insert_total_pages(file, total_pages as i32, conn).await;
+    };
 }
 
 // TODO error/warn message for each `None` in arms
-pub async fn extract_epub_datas(file: &FileInfo, conn: &Pool<Sqlite>) {
+pub fn extract_epub_cover(file: &FileInfo) -> Option<image::DynamicImage> {
     let full_path = format!("{}/{}", file.parent_path, file.name);
     if let Ok(mut doc) = EpubDoc::new(&full_path) {
         // extract cover
@@ -620,18 +650,69 @@ pub async fn extract_epub_datas(file: &FileInfo, conn: &Pool<Sqlite>) {
             // match image::load_from_memory(&cover.0) {
             Ok(img) => {
                 let cover = resize_cover(img);
-                sqlite::insert_cover(file, cover, conn).await;
+                Some(cover)
+                // sqlite::insert_cover(file, cover, conn).await;
             }
             Err(_) => {
                 warn!("I can't decode cover image for file {full_path}");
+                None
             }
         }
-        // total pages
-        let total_pages = doc.get_num_pages();
-        sqlite::insert_total_pages(file, total_pages as i32, conn).await;
-    };
+    } else {
+        None
+    }
 }
 
+pub async fn extract_comic_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
+    let mut compressed_comic_file =
+        File::open(format!("{}/{}", file.parent_path, file.name)).expect("file open");
+    // fn list_archive_files seems to work with all files
+    let file_list = list_archive_files(&mut compressed_comic_file).expect("list_archive_files");
+    let total_pages = file_list.len();
+    sqlite::insert_total_pages(file, total_pages as i32, conn).await;
+}
+
+pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
+    let compressed_comic_file =
+        File::open(format!("{}/{}", file.parent_path, file.name)).expect("file open");
+    // the fn uncompress_archive_file from crate compress_tools does not work here with all files
+    // (KO with CBR), but it works with ArchiveIterator
+    let mut comic_iter = ArchiveIterator::from_read(&compressed_comic_file).expect("iterator");
+    let mut vec_cover: Vec<u8> = Vec::default();
+    // the ArchiveIterator index does not fit the files index in archive so I have to create my own
+    let mut index: usize = 0;
+    for content in &mut comic_iter {
+        match content {
+            ArchiveContents::StartOfEntry(_, _) => (),
+            ArchiveContents::DataChunk(vec_chunk) => {
+                // add chunks in the image Vec
+                if index == 0 {
+                    for chunk in vec_chunk {
+                        vec_cover.push(chunk);
+                    }
+                }
+            }
+            ArchiveContents::EndOfEntry => {
+                // increase index in case of new file
+                index += 1;
+            }
+            ArchiveContents::Err(e) => {
+                error!(
+                    "can't extract cover from file {}/{} {e}",
+                    file.parent_path, file.name
+                );
+            }
+        }
+    }
+    comic_iter.close().unwrap();
+    // return img in base64
+    if let Ok(cover) = image::load_from_memory(&vec_cover) {
+        // sqlite::insert_cover(file, cover, conn).await;
+        Some(cover)
+    } else {
+        None
+    }
+}
 // TODO easy testing here...
 pub fn resize_cover(cover: image::DynamicImage) -> image::DynamicImage {
     // see doc https://docs.rs/image/0.24.5/image/imageops/enum.FilterType.html
@@ -712,7 +793,7 @@ mod tests {
         // init database
         sqlite::init_database().await;
         // run test
-        let skeletion_file = FileInfo {
+        let mut skeletion_file = FileInfo {
             name: "T01 - Asterix le Gaulois.pdf".to_string(),
             parent_path: "library/Asterix".to_string(),
             read_status: 0,
@@ -727,7 +808,7 @@ mod tests {
             id: "666".to_string(),
         };
         let conn = sqlite::create_sqlite_pool().await;
-        insert_new_file(&skeletion_file, None, &conn).await;
+        insert_new_file(&mut skeletion_file, None, &conn).await;
         let file_from_base: Vec<FileInfo> = match sqlx::query_as(&format!(
             "SELECT * FROM files WHERE parent_path = '{}'",
             &skeletion_file.parent_path.replace('\'', "''")
