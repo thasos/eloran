@@ -723,12 +723,10 @@ pub fn resize_cover(cover: image::DynamicImage) -> image::DynamicImage {
 mod tests {
     use super::*;
     use crate::sqlite;
-    use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+    use sqlx::{migrate::MigrateDatabase, Sqlite};
     use std::fs::{self, File};
     use std::io::prelude::*;
     use std::path::Path;
-
-    const DB_URL: &str = "sqlite://sqlite/eloran.db";
 
     fn create_fake_library(library_path: &Path) -> std::io::Result<()> {
         fs::create_dir(library_path)?;
@@ -775,7 +773,6 @@ mod tests {
             size: 10,
             total_pages: 0,
             current_page: 0,
-            cover: "".to_string(),
             // id and added_date are random, so we take them from validation_file
             added_date: validation_file.added_date.clone(),
             id: validation_file.id.clone(),
@@ -799,7 +796,6 @@ mod tests {
             size: 10,
             total_pages: 0,
             current_page: 0,
-            cover: "blablabla".to_string(),
             // id and added_date are random, so we take them from validation_file
             added_date: 666,
             id: "666".to_string(),
