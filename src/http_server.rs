@@ -1,7 +1,7 @@
 use crate::html_render::{self, login_ok};
+use crate::reader;
 use crate::scanner::{DirectoryInfo, FileInfo};
 use crate::sqlite;
-use crate::{reader, scanner};
 
 use axum::http::header;
 use axum::http::StatusCode;
@@ -135,18 +135,20 @@ async fn cover_handler(
     let conn = sqlite::create_sqlite_pool().await;
     let file = sqlite::get_files_from_id(&id, &conn).await;
     debug!("get /cover/{}", id);
+    // TODO delete this ?
     // check cover, try extracting if not present
-    if !sqlite::check_cover(&file, &conn).await {
-        // no async in this match because of lib compress_tool, future will be not send
-        let cover: image::DynamicImage = match file.format.as_str() {
-            "epub" => scanner::extract_epub_cover(&file),
-            "pdf" => scanner::extract_pdf_cover(&file),
-            "cbz" | "cbr" | "cb7" => scanner::extract_comic_cover(&file),
-            _ => None,
-        }
-        .expect("no cover found");
-        sqlite::insert_cover(&file, cover, &conn).await;
-    }
+    // if !sqlite::check_cover(&file, &conn).await {
+    //     // no async in this match because of lib compress_tool, future will be not send
+    //     let cover: Option<image::DynamicImage> = match file.format.as_str() {
+    //         "epub" => scanner::extract_epub_cover(&file),
+    //         "pdf" => scanner::extract_pdf_cover(&file),
+    //         "cbz" | "cbr" | "cb7" => scanner::extract_comic_cover(&file),
+    //         _ => None,
+    //     };
+    //     if let Some(cover) = cover {
+    //         sqlite::insert_cover(&file, cover, &conn).await
+    //     }
+    // }
     // return cover if present, default if not
     let default_cover = {
         let image_file_content = fs::read("src/images/green_book.svgz");

@@ -168,6 +168,7 @@ async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Pool<Sq
         Err(e) => error!("file infos insert failed : {e}"),
     };
     extract_page_number(file, conn).await;
+    extract_cover(file, conn).await;
 }
 
 /// delete a file in database
@@ -565,6 +566,18 @@ pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
     }
 }
 
+pub async fn extract_cover(file: &FileInfo, conn: &Pool<Sqlite>) {
+    let cover = match file.format.as_str() {
+        "epub" => extract_epub_cover(file),
+        "pdf" => extract_pdf_cover(file),
+        "cbz" | "cbr" | "cb7" => extract_comic_cover(file),
+        _ => None,
+    };
+    if let Some(cover) = cover {
+        sqlite::insert_cover(file, cover, conn).await
+    }
+}
+
 pub async fn extract_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
     match file.format.as_str() {
         "epub" => extract_epub_page_number(file, conn).await,
@@ -664,7 +677,16 @@ pub async fn extract_comic_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
     let mut compressed_comic_file =
         File::open(format!("{}/{}", file.parent_path, file.name)).expect("file open");
     // fn list_archive_files seems to work with all files
-    let file_list = list_archive_files(&mut compressed_comic_file).expect("list_archive_files");
+    let file_list = match list_archive_files(&mut compressed_comic_file) {
+        Ok(list) => list,
+        Err(e) => {
+            warn!(
+                "can't get number of pages for file {}/{} : {e}",
+                file.parent_path, file.name
+            );
+            Vec::default()
+        }
+    };
     let total_pages = file_list.len();
     sqlite::insert_total_pages(file, total_pages as i32, conn).await;
 }
@@ -713,9 +735,8 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
 // TODO easy testing here...
 pub fn resize_cover(cover: image::DynamicImage) -> image::DynamicImage {
     // see doc https://docs.rs/image/0.24.5/image/imageops/enum.FilterType.html
-    // for quality of resize
+    // for quality of resize (Nearest is ugly)
     // TODO do not keep ratio ? crop ? the max heigh is the most important
-    // cover.resize_to_fill(150, 230, FilterType::Triangle)
     cover.resize_to_fill(150, 230, FilterType::Triangle)
 }
 
@@ -836,7 +857,7 @@ mod tests {
                 dir_list_path.push(entry.path().to_string_lossy().to_string());
             }
         }
-        let check_dir_list_path: Vec<String> = vec![
+        let mut check_dir_list_path: Vec<String> = vec![
             "library_walkdir".to_string(),
             "library_walkdir/Asterix".to_string(),
             "library_walkdir/Goblin's".to_string(),
@@ -844,9 +865,8 @@ mod tests {
             "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)".to_string(),
             "library_walkdir/Dragonlance".to_string(),
         ];
-        // TODO sort does not wrk ?
-        // dir_list_path.sort();
-        // check_dir_list_path.sort();
+        dir_list_path.sort();
+        check_dir_list_path.sort();
         assert_eq!(dir_list_path, check_dir_list_path);
         // recent files
         let file_list = walk_recent_files(library_path, timestamp_flag);
@@ -856,15 +876,17 @@ mod tests {
                 file_list_path.push(entry.path().to_string_lossy().to_string());
             }
         }
-        let check_file_list_path: Vec<String> = vec![
-            "library_walkdir/Asterix/T02 - La Serpe d'Or.pdf".to_string(),
+        let mut check_file_list_path: Vec<String> = vec![
             "library_walkdir/Asterix/T01 - Asterix le Gaulois.pdf".to_string(),
-            "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/cover.jpg".to_string(),
-            "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/Le Cauchemar d'Innsmouth - Howard Phillips Lovecraft.epub".to_string(),
-            "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/metadata.opf".to_string(),
-            "library_walkdir/Goblin's/T02.cbz".to_string(),
+            "library_walkdir/Asterix/T02 - La Serpe d'Or.pdf".to_string(),
             "library_walkdir/Goblin's/T01.cbz".to_string(),
+            "library_walkdir/Goblin's/T02.cbz".to_string(),
+            "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/cover.jpg".to_string(),
+            "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/metadata.opf".to_string(),
+            "library_walkdir/H.P. Lovecraft/Le Cauchemar d'Innsmouth (310)/Le Cauchemar d'Innsmouth - Howard Phillips Lovecraft.epub".to_string(),
         ];
+        file_list_path.sort();
+        check_file_list_path.sort();
         assert_eq!(file_list_path, check_file_list_path);
         // delete database
         delete_fake_library(library_path).unwrap_or(());

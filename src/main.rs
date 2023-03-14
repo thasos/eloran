@@ -32,6 +32,7 @@ async fn main() -> Result<(), Error> {
         // TODO lib path in conf, need more checks of library ?
         let library_path = Path::new("library_test");
         // let library_path = Path::new("/home/thasos/books");
+        // let library_path = Path::new("/palanthas/bd/bd");
         info!(
             "start scanner routine on library {}",
             library_path.to_string_lossy()

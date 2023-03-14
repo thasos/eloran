@@ -255,6 +255,7 @@ pub async fn set_current_page_from_id(id: &str, page: &i32, conn: &Pool<Sqlite>)
 }
 
 // TODO easy test here
+// use compressed_string::ComprString; ?
 pub fn image_to_base64(img: &DynamicImage) -> String {
     let mut image_data: Vec<u8> = Vec::new();
     img.write_to(
@@ -263,6 +264,9 @@ pub fn image_to_base64(img: &DynamicImage) -> String {
     )
     .unwrap();
     general_purpose::STANDARD.encode(image_data)
+
+    // DEFLATEd string
+    // ComprString::new(&base64_image);
 }
 
 /// insert cover for a file
@@ -303,36 +307,37 @@ pub async fn insert_total_pages(file: &FileInfo, total_pages: i32, conn: &Pool<S
     };
 }
 
-/// check in cover exists for a file
-pub async fn check_cover(file: &FileInfo, conn: &Pool<Sqlite>) -> bool {
-    match sqlx::query(&format!(
-        "SELECT cover FROM covers WHERE id = '{}';",
-        file.id
-    ))
-    .fetch_one(conn)
-    .await
-    {
-        Ok(raw_cover) => {
-            let base64_cover: String = raw_cover.get("cover");
-            if base64_cover.is_empty() {
-                debug!(
-                    "no cover in base for file {}/{}",
-                    file.parent_path, file.name
-                );
-                false
-            } else {
-                true
-            }
-        }
-        Err(e) => {
-            error!(
-                "failed to get cover for file {}/{} : {e}",
-                file.parent_path, file.name
-            );
-            false
-        }
-    }
-}
+// TODO delete this ?
+// /// check if cover exists for a file
+// pub async fn check_cover(file: &FileInfo, conn: &Pool<Sqlite>) -> bool {
+//     match sqlx::query(&format!(
+//         "SELECT cover FROM covers WHERE id = '{}';",
+//         file.id
+//     ))
+//     .fetch_one(conn)
+//     .await
+//     {
+//         Ok(raw_cover) => {
+//             let base64_cover: String = raw_cover.get("cover");
+//             if base64_cover.is_empty() {
+//                 debug!(
+//                     "no cover in base for file {}/{}",
+//                     file.parent_path, file.name
+//                 );
+//                 false
+//             } else {
+//                 true
+//             }
+//         }
+//         Err(e) => {
+//             warn!(
+//                 "failed to get cover for file {}/{} : {e}",
+//                 file.parent_path, file.name
+//             );
+//             false
+//         }
+//     }
+// }
 
 /// get cover from id
 pub async fn get_cover_from_id(file: &FileInfo, conn: &Pool<Sqlite>) -> Option<String> {
@@ -345,7 +350,7 @@ pub async fn get_cover_from_id(file: &FileInfo, conn: &Pool<Sqlite>) -> Option<S
     {
         Ok(cover) => Some(cover.get("cover")),
         Err(e) => {
-            error!(
+            warn!(
                 "failed to get cover for file {}/{} : {e}",
                 file.parent_path, file.name
             );
