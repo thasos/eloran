@@ -11,6 +11,7 @@ use sqlx::{pool::Pool, Row};
 use std::fs::File;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::runtime::Runtime;
 use ulid::Ulid;
 
 /// File struct, match database fields
@@ -163,9 +164,9 @@ async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Pool<Sq
         file.total_pages);
     match sqlx::query(&insert_query).execute(conn).await {
         Ok(_) => {
-            debug!("file update successfull")
+            debug!("file insertion successfull")
         }
-        Err(e) => error!("file infos insert failed : {e}"),
+        Err(e) => error!("file insertion failed : {e}"),
     };
     extract_page_number(file, conn).await;
     extract_cover(file, conn).await;
@@ -402,7 +403,8 @@ fn walk_recent_dir(
 }
 
 /// walk library dir and return list of files modified after the last successfull scan
-fn walk_recent_files(
+/// insert them in the process_read_dir fn of jwalk crate
+fn walk_recent_files_and_insert(
     library_path: &Path,
     last_successfull_scan_date: Duration,
 ) -> WalkDirGeneric<(usize, bool)> {
@@ -431,6 +433,41 @@ fn walk_recent_files(
                             last_successfull_scan_date.as_secs(),
                             dir_entry.file_name().to_string_lossy()
                         );
+                        // insert here to benefit the jwalk parallelism
+                        // file_infos need to be mutable for ulid genereation
+                        let mut file_infos = extract_file_infos(dir_entry.path().as_path());
+                        let filename = file_infos.name.clone();
+                        let parent_path = file_infos.parent_path.clone();
+                        // create a new tokio runtime for inserts
+                        // we need it to use async fns create_sqlite_pool and insert_new_file
+                        let rt = Runtime::new()
+                            .expect("runtime creation for insertions while scanning library");
+                        rt.block_on(async move {
+                            let conn = sqlite::create_sqlite_pool().await;
+                            let file_found = check_if_file_exists(
+                                parent_path.as_str(),
+                                filename.as_str(),
+                                &conn,
+                            )
+                            .await;
+                            if file_found.is_empty() {
+                                // new file
+                                info!("new file found : {}/{}", parent_path, filename);
+                                insert_new_file(&mut file_infos, None, &conn).await;
+                            } else if file_found.len() == 1 {
+                                // 1 file found, ok update it
+                                info!("file modified : {}/{}", parent_path, filename);
+                                let ulid_found = &file_found[0].id;
+                                insert_new_file(&mut file_infos, Some(ulid_found), &conn).await;
+                            } else {
+                                // multiple id for a file ? wrong !!
+                                // TODO propose repair or full rescan
+                                error!(
+                                    "base possibly corrupted, multiple id found for file {}/{}",
+                                    parent_path, filename
+                                );
+                            }
+                        });
                         // flag file for insert
                         dir_entry.client_state = true;
                     }
@@ -523,35 +560,17 @@ pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
             }
 
             // recent files : added and modified files
-            let recent_file_list = walk_recent_files(library_path, last_successfull_scan_date);
-
-            // loop on recent files list
+            let recent_file_list =
+                walk_recent_files_and_insert(library_path, last_successfull_scan_date);
             for entry in recent_file_list.into_iter().flatten() {
                 if entry.client_state {
-                    let mut file_infos = extract_file_infos(entry.path().as_path());
-                    let filename = &file_infos.name;
-                    let parent_path = &file_infos.parent_path;
-                    let file_found = check_if_file_exists(parent_path, filename, &conn).await;
-                    if file_found.is_empty() {
-                        // new file
-                        info!("new file found : {}/{}", parent_path, filename);
-                        insert_new_file(&mut file_infos, None, &conn).await;
-                    } else if file_found.len() == 1 {
-                        // 1 file found, ok update it
-                        info!("file modified : {}/{}", parent_path, filename);
-                        let ulid_found = &file_found[0].id;
-                        insert_new_file(&mut file_infos, Some(ulid_found), &conn).await;
-                    } else {
-                        // multiple id for a file ? wrong !!
-                        // TODO propose repair or full rescan
-                        error!(
-                            "base possibly corrupted, multiple id found for file {}/{}",
-                            parent_path, filename
-                        );
-                    }
+                    debug!(
+                        "insert file {}/{}",
+                        entry.parent_path.to_string_lossy(),
+                        entry.file_name.to_string_lossy()
+                    );
                 }
             }
-
             // end scanner, update date if successfull
             // TODO comment check si successfull ?
             // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
@@ -869,7 +888,7 @@ mod tests {
         check_dir_list_path.sort();
         assert_eq!(dir_list_path, check_dir_list_path);
         // recent files
-        let file_list = walk_recent_files(library_path, timestamp_flag);
+        let file_list = walk_recent_files_and_insert(library_path, timestamp_flag);
         let mut file_list_path: Vec<String> = vec![];
         for entry in file_list.into_iter().flatten() {
             if entry.client_state {
