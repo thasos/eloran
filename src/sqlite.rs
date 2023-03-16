@@ -1,4 +1,3 @@
-// TODO use `?` and `bind()` everywhere (see insert_cover)
 use crate::scanner::FileInfo;
 
 use base64::{engine::general_purpose, Engine as _};
@@ -121,15 +120,14 @@ VALUES (1,'pass123','admin','Admin'),
 pub async fn set_library_path(library_path: &Path, conn: &Pool<Sqlite>) {
     let path_in_base = get_library_path(conn).await;
     if path_in_base.is_empty() {
-        let insert_library_path = format!(
-            "INSERT OR IGNORE INTO core(id, library_path) VALUES (1,'{}');",
-            library_path.to_string_lossy().replace('\'', "''")
-        );
-        match sqlx::query(&insert_library_path).execute(conn).await {
+        match sqlx::query("INSERT OR IGNORE INTO core(id, library_path) VALUES (1,?);")
+            .bind(library_path.to_string_lossy().replace('\'', "''"))
+            .execute(conn)
+            .await
+        {
             Ok(_) => info!("library path successfully created"),
             Err(e) => error!("failed to create library path : {}", e),
         }
-    // }
     } else {
         // TODO test si les path sont =
         if path_in_base != library_path.to_string_lossy() {
@@ -182,20 +180,19 @@ pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileI
     // remove last '/'
     parent_path.pop();
 
-    let file: FileInfo = match sqlx::query_as(&format!(
-        "SELECT * FROM files WHERE parent_path = '{}' AND name = '{}';",
-        parent_path.replace('\'', "''"),
-        file_name.replace('\'', "''"),
-    ))
-    .fetch_one(conn)
-    .await
-    {
-        Ok(file_found) => file_found,
-        Err(e) => {
-            error!("unable to retrieve file infos from database : {}", e);
-            FileInfo::new()
-        }
-    };
+    let file: FileInfo =
+        match sqlx::query_as("SELECT * FROM files WHERE parent_path = ? AND name = ?;")
+            .bind(parent_path.replace('\'', "''"))
+            .bind(file_name.replace('\'', "''"))
+            .fetch_one(conn)
+            .await
+        {
+            Ok(file_found) => file_found,
+            Err(e) => {
+                error!("unable to retrieve file infos from database : {}", e);
+                FileInfo::new()
+            }
+        };
     file
 }
 
@@ -204,7 +201,8 @@ pub async fn get_files_from_id(id: &str, conn: &Pool<Sqlite>) -> FileInfo {
     // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
     // TODO ⚠️ select all but cover ⚠️  no need it in memory...
     // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-    let file: FileInfo = match sqlx::query_as(&format!("SELECT * FROM files WHERE id = '{}';", id,))
+    let file: FileInfo = match sqlx::query_as("SELECT * FROM files WHERE id = ?;")
+        .bind(id)
         .fetch_one(conn)
         .await
     {
@@ -219,12 +217,10 @@ pub async fn get_files_from_id(id: &str, conn: &Pool<Sqlite>) -> FileInfo {
 
 /// get currentPage from file id (can be usefull for sync)
 pub async fn _get_current_page_from_id(id: &str, conn: &Pool<Sqlite>) -> i32 {
-    let file: i32 = match sqlx::query(&format!(
-        "SELECT current_page FROM files WHERE id = '{}';",
-        id,
-    ))
-    .fetch_one(conn)
-    .await
+    let file: i32 = match sqlx::query("SELECT current_page FROM files WHERE id = ?;")
+        .bind(id)
+        .fetch_one(conn)
+        .await
     {
         Ok(file_found) => file_found.get("current_page"),
         Err(e) => {
@@ -240,12 +236,11 @@ pub async fn _get_current_page_from_id(id: &str, conn: &Pool<Sqlite>) -> i32 {
 
 /// set currentPage from file id
 pub async fn set_current_page_from_id(id: &str, page: &i32, conn: &Pool<Sqlite>) {
-    match sqlx::query(&format!(
-        "UPDATE files SET current_page = '{}' WHERE id = '{}';",
-        page, id,
-    ))
-    .execute(conn)
-    .await
+    match sqlx::query("UPDATE files SET current_page = ? WHERE id = ?;")
+        .bind(page)
+        .bind(id)
+        .execute(conn)
+        .await
     {
         Ok(_) => debug!("current_page successfully setted to {} for id {}", page, id),
         Err(e) => {
@@ -286,12 +281,11 @@ pub async fn insert_cover(file: &FileInfo, cover: &Vec<u8>, conn: &Pool<Sqlite>)
 
 /// insert total_pages for a file
 pub async fn insert_total_pages(file: &FileInfo, total_pages: i32, conn: &Pool<Sqlite>) {
-    match sqlx::query(&format!(
-        "UPDATE files SET total_pages = '{}' WHERE id = '{}';",
-        total_pages, file.id
-    ))
-    .execute(conn)
-    .await
+    match sqlx::query("UPDATE files SET total_pages = ? WHERE id = ?;")
+        .bind(total_pages)
+        .bind(&file.id)
+        .execute(conn)
+        .await
     {
         Ok(_) => debug!(
             "total_pages updated for file {}/{}",

@@ -75,24 +75,24 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
     // get user from db
     // TODO hash password
     Html({
-        let login_response = match sqlx::query_as(&format!(
-            "SELECT * FROM users WHERE name = '{}' AND password_hash = '{}'",
-            &username, &password
-        ))
-        .fetch_one(&conn)
-        .await
-        {
-            Ok(user) => {
-                // TODO check if password match
-                auth.login(&user).await.unwrap();
-                login_ok(&user)
-            }
-            Err(_) => {
-                warn!("user {} not found", &username);
-                // TODO : vraie page
-                "user not found".to_string()
-            }
-        };
+        let login_response =
+            match sqlx::query_as("SELECT * FROM users WHERE name = ? AND password_hash = ?;")
+                .bind(&username)
+                .bind(&password)
+                .fetch_one(&conn)
+                .await
+            {
+                Ok(user) => {
+                    // TODO check if password match
+                    auth.login(&user).await.unwrap();
+                    login_ok(&user)
+                }
+                Err(_) => {
+                    warn!("user {} not found", &username);
+                    // TODO : vraie page
+                    "user not found".to_string()
+                }
+            };
         conn.close().await;
         login_response
     })
@@ -239,7 +239,8 @@ async fn library_handler(
         info!("get /library{} : {}", path, user.name);
         // TODO set limit in conf
         let files_list: Vec<FileInfo> = match sqlx::query_as(&format!(
-            "SELECT * FROM files WHERE parent_path = '{library_path}{}'",
+            "SELECT * FROM files WHERE parent_path = '{}{}'",
+            library_path,
             path.replace('\'', "''")
         ))
         .fetch_all(&conn)
@@ -259,7 +260,8 @@ async fn library_handler(
         info!("get /library{} : {}", path, user.name);
         // TODO set limit in conf
         let directories_list: Vec<DirectoryInfo> = match sqlx::query_as(&format!(
-            "SELECT * FROM directories WHERE parent_path = '{library_path}{}'",
+            "SELECT * FROM directories WHERE parent_path = '{}{}'",
+            library_path,
             path.replace('\'', "''")
         ))
         .fetch_all(&conn)

@@ -147,22 +147,21 @@ async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Pool<Sq
         None => Ulid::new().to_string(),
     };
     file.id = ulid;
-    // prepare query
-    let insert_query = format!(
+    match sqlx::query(
         "INSERT OR REPLACE INTO files(id, name, parent_path, size, added_date, scan_me, read_status, format, current_page, total_pages)
-                    VALUES('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}');",
-        file.id,
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
+        .bind(&file.id)
         // escape ' with '' in sqlite...
-        file.name.replace('\'', "''"),
-        file.parent_path.replace('\'', "''"),
-        file.size,
-        file.added_date,
-        file.scan_me,
-        file.read_status,
-        file.format,
-        file.current_page,
-        file.total_pages);
-    match sqlx::query(&insert_query).execute(conn).await {
+        .bind(file.name.replace('\'', "''"))
+        .bind(file.parent_path.replace('\'', "''"))
+        .bind(file.size)
+        .bind(file.added_date)
+        .bind(file.scan_me)
+        .bind(file.read_status)
+        .bind(&file.format)
+        .bind(file.current_page)
+        .bind(file.total_pages)
+        .execute(conn).await {
         Ok(_) => {
             debug!("file insertion successfull")
         }
@@ -174,13 +173,11 @@ async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Pool<Sq
 
 /// delete a file in database
 async fn delete_file(file: &FileInfo, conn: &Pool<Sqlite>) {
-    match sqlx::query(&format!(
-        "DELETE FROM files WHERE name = '{}' AND parent_path = '{}';",
-        file.name.replace('\'', "''"),
-        file.parent_path.replace('\'', "''")
-    ))
-    .execute(conn)
-    .await
+    match sqlx::query("DELETE FROM files WHERE name = ? AND parent_path = ?;")
+        .bind(file.name.replace('\'', "''"))
+        .bind(file.parent_path.replace('\'', "''"))
+        .execute(conn)
+        .await
     {
         Ok(_) => {
             info!("file {}/{} deleted", file.name, file.parent_path)
@@ -259,21 +256,20 @@ async fn check_if_directory_exists(
     directory_name: &str,
     conn: &Pool<Sqlite>,
 ) -> Vec<DirectoryInfo> {
-    let directory_found: Vec<DirectoryInfo> = match sqlx::query_as(&format!(
-        "SELECT * FROM directories WHERE name = '{}' AND parent_path = '{}'",
-        directory_name.replace('\'', "''"),
-        parent_path.replace('\'', "''")
-    ))
-    .fetch_all(conn)
-    .await
-    {
-        Ok(dir_found) => dir_found,
-        Err(e) => {
-            error!("unable to retrieve file infos from database : {}", e);
-            let empty_list: Vec<DirectoryInfo> = Vec::new();
-            empty_list
-        }
-    };
+    let directory_found: Vec<DirectoryInfo> =
+        match sqlx::query_as("SELECT * FROM directories WHERE name = ? AND parent_path = ?;")
+            .bind(directory_name.replace('\'', "''"))
+            .bind(parent_path.replace('\'', "''"))
+            .fetch_all(conn)
+            .await
+        {
+            Ok(dir_found) => dir_found,
+            Err(e) => {
+                error!("unable to retrieve file infos from database : {}", e);
+                let empty_list: Vec<DirectoryInfo> = Vec::new();
+                empty_list
+            }
+        };
     directory_found
 }
 
@@ -283,21 +279,20 @@ async fn check_if_file_exists(
     filename: &str,
     conn: &Pool<Sqlite>,
 ) -> Vec<FileInfo> {
-    let file_found: Vec<FileInfo> = match sqlx::query_as(&format!(
-        "SELECT * FROM files WHERE name = '{}' AND parent_path = '{}'",
-        filename.replace('\'', "''"),
-        parent_path.replace('\'', "''")
-    ))
-    .fetch_all(conn)
-    .await
-    {
-        Ok(file_found) => file_found,
-        Err(e) => {
-            error!("unable to retrieve file infos from database : {}", e);
-            let empty_list: Vec<FileInfo> = Vec::new();
-            empty_list
-        }
-    };
+    let file_found: Vec<FileInfo> =
+        match sqlx::query_as("SELECT * FROM files WHERE name = ? AND parent_path = ?;")
+            .bind(filename.replace('\'', "''"))
+            .bind(parent_path.replace('\'', "''"))
+            .fetch_all(conn)
+            .await
+        {
+            Ok(file_found) => file_found,
+            Err(e) => {
+                error!("unable to retrieve file infos from database : {}", e);
+                let empty_list: Vec<FileInfo> = Vec::new();
+                empty_list
+            }
+        };
     file_found
 }
 
@@ -330,12 +325,10 @@ async fn update_last_successfull_scan_date(conn: &Pool<Sqlite>) {
     // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-    match sqlx::query(&format!(
-        "UPDATE core SET last_successfull_scan_date = '{}' WHERE id = 1;",
-        since_the_epoch.as_secs() as i64
-    ))
-    .execute(conn)
-    .await
+    match sqlx::query("UPDATE core SET last_successfull_scan_date = ? WHERE id = 1;")
+        .bind(since_the_epoch.as_secs() as i64)
+        .execute(conn)
+        .await
     {
         Ok(_) => debug!("last_successfull_scan_date updated in database"),
         Err(e) => debug!("last_successfull_scan_date update failed : {e}"),
@@ -349,17 +342,18 @@ async fn insert_new_dir(directory: &DirectoryInfo, ulid: Option<&str>, conn: &Po
         Some(ulid) => ulid.to_string(),
         None => Ulid::new().to_string(),
     };
-    // prepare query
-    let insert_query = format!(
-        "INSERT OR REPLACE INTO directories(id, name, parent_path)
-                    VALUES('{}', '{}', '{}');",
-        ulid,
-        // escape ' with '' in sqlite...
-        directory.name.replace('\'', "''"),
-        directory.parent_path.replace('\'', "''")
-    );
     // insert_query
-    match sqlx::query(&insert_query).execute(conn).await {
+    match sqlx::query(
+        "INSERT OR REPLACE INTO directories(id, name, parent_path)
+                    VALUES(?, ?, ?);",
+    )
+    .bind(ulid)
+    // escape ' with '' in sqlite...
+    .bind(directory.name.replace('\'', "''"))
+    .bind(directory.parent_path.replace('\'', "''"))
+    .execute(conn)
+    .await
+    {
         Ok(_) => {
             debug!("directory update successfull")
         }
@@ -858,20 +852,19 @@ mod tests {
         };
         let conn = sqlite::create_sqlite_pool().await;
         insert_new_file(&mut skeletion_file, None, &conn).await;
-        let file_from_base: Vec<FileInfo> = match sqlx::query_as(&format!(
-            "SELECT * FROM files WHERE parent_path = '{}'",
-            &skeletion_file.parent_path.replace('\'', "''")
-        ))
-        .fetch_all(&conn)
-        .await
-        {
-            Ok(file_found) => file_found,
-            Err(e) => {
-                error!("unable to retrieve file infos from database : {}", e);
-                let empty_list: Vec<FileInfo> = Vec::new();
-                empty_list
-            }
-        };
+        let file_from_base: Vec<FileInfo> =
+            match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
+                .bind(&skeletion_file.parent_path.replace('\'', "''"))
+                .fetch_all(&conn)
+                .await
+            {
+                Ok(file_found) => file_found,
+                Err(e) => {
+                    error!("unable to retrieve file infos from database : {}", e);
+                    let empty_list: Vec<FileInfo> = Vec::new();
+                    empty_list
+                }
+            };
         assert_eq!(file_from_base.first().unwrap().name, skeletion_file.name);
         // delete database
         Sqlite::drop_database(crate::DB_URL);
