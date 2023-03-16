@@ -3,6 +3,7 @@ use crate::sqlite;
 use compress_tools::*;
 use epub::doc::EpubDoc;
 use image::imageops::FilterType;
+use image::DynamicImage;
 use jwalk::WalkDirGeneric;
 use pdf::object::*;
 use sqlx::Sqlite;
@@ -579,6 +580,13 @@ pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
     }
 }
 
+pub fn dynamic_image_to_vec_u8(image: DynamicImage) -> Vec<u8> {
+    let mut buf = Cursor::new(vec![]);
+    image.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+    let vec_u8_image = buf.get_ref();
+    vec_u8_image.to_owned()
+}
+
 pub async fn extract_cover(file: &FileInfo, conn: &Pool<Sqlite>) {
     let dynamic_image_cover = match file.format.as_str() {
         "epub" => extract_epub_cover(file),
@@ -588,10 +596,8 @@ pub async fn extract_cover(file: &FileInfo, conn: &Pool<Sqlite>) {
     };
 
     if let Some(cover) = dynamic_image_cover {
-        let mut buf = Cursor::new(vec![]);
-        cover.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
-        let buffered_u8_cover = &buf.get_ref();
-        sqlite::insert_cover(file, buffered_u8_cover, conn).await
+        let buffered_u8_cover = dynamic_image_to_vec_u8(cover);
+        sqlite::insert_cover(file, &buffered_u8_cover, conn).await
     }
 }
 

@@ -1,6 +1,6 @@
 # par défaut : lance la 1ère recipe, sinon :
 default:
-  just --list --unsorted
+    just --list --unsorted
 
 run:
     RUST_LOG=debug \

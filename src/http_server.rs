@@ -239,7 +239,7 @@ async fn library_handler(
         info!("get /library{} : {}", path, user.name);
         // TODO set limit in conf
         let files_list: Vec<FileInfo> = match sqlx::query_as(&format!(
-            "SELECT * FROM files WHERE parent_path = '{}{}'",
+            "SELECT * FROM files WHERE parent_path = '{}{}' ORDER BY name",
             library_path,
             path.replace('\'', "''")
         ))

@@ -52,7 +52,7 @@ pub async fn comics(file: &FileInfo, page: i32) -> String {
     match image::load_from_memory(&vec_comic_page) {
         Ok(img) => {
             format!(
-                // TODO if not jpeg ???
+                // TODO create a `page` router to render directly (no b64)
                 "<img src=\"data:image/jpeg;base64,{}\")",
                 sqlite::image_to_base64(&img)
             )
