@@ -1,14 +1,14 @@
 use crate::sqlite;
 
-use cairo::{Context, Format, ImageSurface};
 use compress_tools::*;
 use epub::doc::EpubDoc;
 use image::imageops::FilterType;
 use jwalk::WalkDirGeneric;
-use poppler::{PopplerDocument, PopplerPage};
+use pdf::object::*;
 use sqlx::Sqlite;
 use sqlx::{pool::Pool, Row};
 use std::fs::File;
+use std::io::Cursor;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
@@ -477,7 +477,7 @@ fn walk_recent_files_and_insert(
 }
 
 /// scan library path and add files in db
-// batch insert ? -> no speed improvement
+// batch insert -> no speed improvement
 // TODO check total number file found, vs total in db (for insert errors) ?
 pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
     // register library_path in database if not present
@@ -586,14 +586,18 @@ pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
 }
 
 pub async fn extract_cover(file: &FileInfo, conn: &Pool<Sqlite>) {
-    let cover = match file.format.as_str() {
+    let dynamic_image_cover = match file.format.as_str() {
         "epub" => extract_epub_cover(file),
         "pdf" => extract_pdf_cover(file),
         "cbz" | "cbr" | "cb7" => extract_comic_cover(file),
         _ => None,
     };
-    if let Some(cover) = cover {
-        sqlite::insert_cover(file, cover, conn).await
+
+    if let Some(cover) = dynamic_image_cover {
+        let mut buf = Cursor::new(vec![]);
+        cover.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+        let buffered_u8_cover = &buf.get_ref();
+        sqlite::insert_cover(file, buffered_u8_cover, conn).await
     }
 }
 
@@ -609,49 +613,63 @@ pub async fn extract_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
 pub async fn extract_pdf_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
     let full_path = format!("{}/{}", file.parent_path, file.name);
     let mut total_pages = 0;
+
     // no await in this scope, cause error trait `Handler<_, _, _>` is not implemented
     // use macro #[axum::debug_handler] on handler to see details
-    if let Ok(doc) = PopplerDocument::new_from_file(&full_path, "") {
-        total_pages = doc.get_n_pages();
+    if let Ok(doc) = pdf::file::File::open(&full_path) {
+        total_pages = doc.num_pages();
     };
+
     sqlite::insert_total_pages(file, total_pages as i32, conn).await;
 }
 
 // TODO error/warn message for each `None` in arms
+// ⚠️  "the image crate is known to be quite slow when compiled in debug mode"
+// from https://www.reddit.com/r/rust/comments/k1wjix/why_opening_of_images_is_so_slow/
 pub fn extract_pdf_cover(file: &FileInfo) -> Option<image::DynamicImage> {
     let full_path = format!("{}/{}", file.parent_path, file.name);
     let mut cover: Option<image::DynamicImage> = None;
-    // no await in this scope, cause error trait `Handler<_, _, _>` is not implemented
-    // use macro #[axum::debug_handler] on handler to see details
-    if let Ok(doc) = PopplerDocument::new_from_file(&full_path, "") {
-        // extract 1st page as cover
-        // TODO error handling
-        let first_page: PopplerPage = doc.get_page(0).expect("get_page");
-        let (width, height) = first_page.get_size();
-        let surface = ImageSurface::create(Format::ARgb32, width as i32, height as i32)
-            .expect("create ImageSurface");
-        let context = Context::new(&surface).expect("new Context");
-        context.save().expect("save Context");
-        first_page.render(&context);
-        context.restore().expect("restore Context");
-        context.show_page().expect("show_page Context");
-        let mut vec_cover: Vec<u8> = vec![];
-        surface.write_to_png(&mut vec_cover).expect("write_to_png");
-        // resize and return image
-        match image::load_from_memory(&vec_cover) {
-            Ok(img) => cover = Some(resize_cover(img)),
-            Err(_) => {
-                warn!("I can't decode cover image for file {full_path}");
+
+    if let Ok(doc) = pdf::file::File::open(&full_path) {
+        if let Ok(page) = doc.get_page(0) {
+            let resources = page.resources().unwrap();
+
+            let mut cover_images: Vec<RcRef<XObject>> = vec![];
+            cover_images.extend(
+                resources
+                    .xobjects
+                    .iter()
+                    .map(|(_name, &ressource)| doc.get(ressource).unwrap())
+                    .filter(|o| matches!(**o, XObject::Image(_))),
+            );
+
+            if let Some(first_object) = cover_images.first() {
+                let image = match **first_object {
+                    XObject::Image(ref im) => Some(im),
+                    _ => None,
+                };
+                let (data, _filter) = image.expect("image option").raw_image_data(&doc).unwrap();
+
+                let vec_cover = data.to_vec();
+
+                // resize and insert
+                match image::load_from_memory(&vec_cover) {
+                    Ok(img) => cover = Some(resize_cover(img)),
+                    Err(_) => {
+                        warn!("I can't decode cover image for file {full_path}");
+                    }
+                };
+                cover
+            } else {
+                None
             }
-        };
-        cover
+        } else {
+            None
+        }
     } else {
+        error!("unable to load pdf file {}", &full_path);
         None
     }
-    // if Some(&cover).is_some() {
-    //     sqlite::insert_cover(file, cover.unwrap(), conn).await;
-    // }
-    // sqlite::insert_total_pages(file, total_pages as i32, conn).await;
 }
 
 pub async fn extract_epub_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
@@ -743,9 +761,7 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
         }
     }
     comic_iter.close().unwrap();
-    // return img in base64
     if let Ok(cover) = image::load_from_memory(&vec_cover) {
-        // sqlite::insert_cover(file, cover, conn).await;
         Some(cover)
     } else {
         None

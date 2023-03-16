@@ -153,8 +153,6 @@ pub fn library(
                 div(class="gallery", style="box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);") {
                     // TODO add field `current page` instead of page 0...
                     a(href=format!("/infos/{}", &file.id)) {
-                        // TODO if cover found, print it !
-                        // img(src=format!("{}", display_cover(file)), alt="green book", width="150", height="230")
                         img(src=format!("/cover/{}", &file.id), alt="green book", width="150", height="230")
                         : format_args!("{}", file.name)
                     }
@@ -164,16 +162,6 @@ pub fn library(
     };
     render(body_content)
 }
-
-// fn display_cover(file: &FileInfo) -> String {
-//     if file.cover.is_empty() {
-//         "/images/green_book.svgz".to_string()
-//     } else {
-//         format!("data:image/jpeg;base64,{}", file.cover)
-//         // TODO activate
-//         // format!("/covers/{}", file.id)
-//     }
-// }
 
 fn menu<'a>(user: User) -> Box<dyn horrorshow::RenderBox + 'a> {
     debug!("fn menu");

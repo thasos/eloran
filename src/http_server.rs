@@ -16,7 +16,6 @@ use axum_login::{
     secrecy::SecretVec,
     AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
 };
-use base64::{engine::general_purpose, Engine as _};
 use rand::Rng;
 use std::fs;
 use std::io::Error;
@@ -127,7 +126,6 @@ async fn infos_handler(
     Html(html_render::file_info(&user, &file))
 }
 
-// #[axum::debug_handler]
 async fn cover_handler(
     Extension(_user): Extension<User>,
     Path(id): Path<String>,
@@ -135,21 +133,7 @@ async fn cover_handler(
     let conn = sqlite::create_sqlite_pool().await;
     let file = sqlite::get_files_from_id(&id, &conn).await;
     debug!("get /cover/{}", id);
-    // TODO delete this ?
-    // check cover, try extracting if not present
-    // if !sqlite::check_cover(&file, &conn).await {
-    //     // no async in this match because of lib compress_tool, future will be not send
-    //     let cover: Option<image::DynamicImage> = match file.format.as_str() {
-    //         "epub" => scanner::extract_epub_cover(&file),
-    //         "pdf" => scanner::extract_pdf_cover(&file),
-    //         "cbz" | "cbr" | "cb7" => scanner::extract_comic_cover(&file),
-    //         _ => None,
-    //     };
-    //     if let Some(cover) = cover {
-    //         sqlite::insert_cover(&file, cover, &conn).await
-    //     }
-    // }
-    // return cover if present, default if not
+    // defaut cover definition
     let default_cover = {
         let image_file_content = fs::read("src/images/green_book.svgz");
         match image_file_content {
@@ -168,19 +152,17 @@ async fn cover_handler(
             }
         }
     };
-
     // get cover from database
     // return default cover if problem with database or cover empty
-    let base64_cover = sqlite::get_cover_from_id(&file, &conn).await;
+    let u8_cover = sqlite::get_cover_from_id(&file, &conn).await;
     conn.close().await;
-    match base64_cover {
-        Some(base64_jpg) => {
-            if !base64_jpg.is_empty() {
-                let vec_cover = general_purpose::STANDARD.decode(base64_jpg).unwrap();
+    match u8_cover {
+        Some(cover) => {
+            if !cover.is_empty() {
                 (
                     StatusCode::OK,
                     [(header::CONTENT_TYPE, "image/jpeg")],
-                    vec_cover,
+                    cover,
                 )
                     .into_response()
             } else {

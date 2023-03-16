@@ -89,7 +89,6 @@ pub async fn epub(file: &FileInfo, page: i32) -> String {
     // let extracss = "body { background-color: #303030; color: white }";
     // doc.add_extra_css(extracss);
 
-    // <p><img src=\"/covers/id/cover.jpg\"/></p>
     let mut reader = format!(
         "page: {}/{}<br />
          fs path: {}-{}<br />

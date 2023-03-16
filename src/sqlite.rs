@@ -1,3 +1,4 @@
+// TODO use `?` and `bind()` everywhere (see insert_cover)
 use crate::scanner::FileInfo;
 
 use base64::{engine::general_purpose, Engine as _};
@@ -58,6 +59,8 @@ pub async fn init_database() {
     // TODO check if already created ?
     // TODO use after connect ?
     // https://docs.rs/sqlx/0.6.2/sqlx/pool/struct.PoolOptions.html#method.after_connect
+    // ou `create_if_missing`
+    // https://github.com/launchbadge/sqlx/issues/1114
     let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
     let schema = r#"
 CREATE TABLE IF NOT EXISTS users (
@@ -85,7 +88,7 @@ CREATE TABLE IF NOT EXISTS files (
 );
 CREATE TABLE IF NOT EXISTS covers (
   id ULID PRIMARY KEY NOT NULL,
-  cover TEXT DEFAULT NULL
+  cover BLOB DEFAULT NULL
 );
 CREATE TABLE IF NOT EXISTS core (
   id INTEGER PRIMARY KEY NOT NULL,
@@ -255,7 +258,6 @@ pub async fn set_current_page_from_id(id: &str, page: &i32, conn: &Pool<Sqlite>)
 }
 
 // TODO easy test here
-// use compressed_string::ComprString; ?
 pub fn image_to_base64(img: &DynamicImage) -> String {
     let mut image_data: Vec<u8> = Vec::new();
     img.write_to(
@@ -264,20 +266,15 @@ pub fn image_to_base64(img: &DynamicImage) -> String {
     )
     .unwrap();
     general_purpose::STANDARD.encode(image_data)
-
-    // DEFLATEd string
-    // ComprString::new(&base64_image);
 }
 
 /// insert cover for a file
-pub async fn insert_cover(file: &FileInfo, cover: DynamicImage, conn: &Pool<Sqlite>) {
-    let base64_cover = image_to_base64(&cover);
-    match sqlx::query(&format!(
-        "INSERT OR REPLACE INTO covers(id,cover) VALUES ('{}','{}');",
-        file.id, base64_cover
-    ))
-    .execute(conn)
-    .await
+pub async fn insert_cover(file: &FileInfo, cover: &Vec<u8>, conn: &Pool<Sqlite>) {
+    match sqlx::query("INSERT OR REPLACE INTO covers(id,cover) VALUES (?, ?);")
+        .bind(&file.id)
+        .bind(cover)
+        .execute(conn)
+        .await
     {
         Ok(_) => debug!("cover updated for file {}/{}", file.parent_path, file.name),
         Err(e) => error!(
@@ -307,46 +304,12 @@ pub async fn insert_total_pages(file: &FileInfo, total_pages: i32, conn: &Pool<S
     };
 }
 
-// TODO delete this ?
-// /// check if cover exists for a file
-// pub async fn check_cover(file: &FileInfo, conn: &Pool<Sqlite>) -> bool {
-//     match sqlx::query(&format!(
-//         "SELECT cover FROM covers WHERE id = '{}';",
-//         file.id
-//     ))
-//     .fetch_one(conn)
-//     .await
-//     {
-//         Ok(raw_cover) => {
-//             let base64_cover: String = raw_cover.get("cover");
-//             if base64_cover.is_empty() {
-//                 debug!(
-//                     "no cover in base for file {}/{}",
-//                     file.parent_path, file.name
-//                 );
-//                 false
-//             } else {
-//                 true
-//             }
-//         }
-//         Err(e) => {
-//             warn!(
-//                 "failed to get cover for file {}/{} : {e}",
-//                 file.parent_path, file.name
-//             );
-//             false
-//         }
-//     }
-// }
-
-/// get cover from id
-pub async fn get_cover_from_id(file: &FileInfo, conn: &Pool<Sqlite>) -> Option<String> {
-    match sqlx::query(&format!(
-        "SELECT cover FROM covers WHERE id = '{}';",
-        file.id
-    ))
-    .fetch_one(conn)
-    .await
+/// get cover from id, raw (Vec<u8>)
+pub async fn get_cover_from_id(file: &FileInfo, conn: &Pool<Sqlite>) -> Option<Vec<u8>> {
+    match sqlx::query("SELECT cover FROM covers WHERE id = ?;")
+        .bind(&file.id)
+        .fetch_one(conn)
+        .await
     {
         Ok(cover) => Some(cover.get("cover")),
         Err(e) => {
