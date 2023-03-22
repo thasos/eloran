@@ -710,57 +710,57 @@ pub fn extract_epub_cover(file: &FileInfo) -> Option<image::DynamicImage> {
     }
 }
 
-pub async fn extract_comic_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
-    let mut compressed_comic_file =
-        File::open(format!("{}/{}", file.parent_path, file.name)).expect("file open");
-    // fn list_archive_files seems to work with all files
-    let file_list = match list_archive_files(&mut compressed_comic_file) {
-        Ok(list) => list,
-        Err(e) => {
-            warn!(
-                "can't get number of pages for file {}/{} : {e}",
-                file.parent_path, file.name
-            );
-            Vec::default()
+// filter a list of files in archives to keep only images with thier indexes
+// fn extract_comic_image_list(archive: &str) -> Vec<(usize, String)> {
+pub fn extract_comic_image_list(archive: &File) -> Vec<String> {
+    let comic_file_list = list_archive_files(archive).expect("list_archive_files");
+    // TODO use drain_filter when it will be stable
+    // see https://github.com/rust-lang/rust/issues/43244
+    let mut image_list = Vec::default();
+    for file_path in comic_file_list.into_iter() {
+        // TODO can be something else that .jpg ?
+        if file_path.contains(".jpg") {
+            image_list.push(file_path);
         }
-    };
+    }
+    // sometime the archive does not begin by image 01...
+    image_list.sort();
+    image_list
+}
+
+pub async fn extract_comic_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
+    let compressed_comic_file =
+        File::open(format!("{}/{}", file.parent_path, file.name)).expect("file open");
+    let file_list = extract_comic_image_list(&compressed_comic_file);
     let total_pages = file_list.len();
     sqlite::insert_total_pages(file, total_pages as i32, conn).await;
 }
 
 pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
-    let compressed_comic_file =
-        File::open(format!("{}/{}", file.parent_path, file.name)).expect("file open");
-    // the fn uncompress_archive_file from crate compress_tools does not work here with all files
-    // (KO with CBR), but it works with ArchiveIterator
-    let mut comic_iter = ArchiveIterator::from_read(&compressed_comic_file).expect("iterator");
-    let mut vec_cover: Vec<u8> = Vec::default();
-    // the ArchiveIterator index does not fit the files index in archive so I have to create my own
-    let mut index: usize = 0;
-    for content in &mut comic_iter {
-        match content {
-            ArchiveContents::StartOfEntry(_, _) => (),
-            ArchiveContents::DataChunk(vec_chunk) => {
-                // add chunks in the image Vec
-                if index == 0 {
-                    for chunk in vec_chunk {
-                        vec_cover.push(chunk);
-                    }
-                }
-            }
-            ArchiveContents::EndOfEntry => {
-                // increase index in case of new file
-                index += 1;
-            }
-            ArchiveContents::Err(e) => {
-                error!(
-                    "can't extract cover from file {}/{} {e}",
-                    file.parent_path, file.name
-                );
-            }
+    let archive_path = &format!("{}/{}", file.parent_path, file.name);
+    let compressed_comic_file = File::open(archive_path).expect("file open");
+    // get images list from archive
+    let comic_file_list = extract_comic_image_list(&compressed_comic_file);
+    // set path file wanted from page index
+    let image_path_in_achive = match comic_file_list.first() {
+        Some(path) => path,
+        None => {
+            error!("could not retrive cover in archive");
+            ""
         }
+    };
+    // uncompress corresponding image
+    let mut vec_cover: Vec<u8> = Vec::default();
+    // RAR need to reopen file... why ? and why rar only ?
+    let compressed_comic_file = File::open(archive_path).expect("file open");
+    match uncompress_archive_file(&compressed_comic_file, &mut vec_cover, image_path_in_achive) {
+        Ok(_) => (),
+        Err(e) => error!(
+            "unable to extract path '{}' from file '{}' : {e}",
+            image_path_in_achive, file.name
+        ),
     }
-    comic_iter.close().unwrap();
+
     if let Ok(cover) = image::load_from_memory(&vec_cover) {
         Some(cover)
     } else {

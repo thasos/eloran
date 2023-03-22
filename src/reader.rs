@@ -1,4 +1,4 @@
-use crate::scanner::FileInfo;
+use crate::scanner::{self, FileInfo};
 use crate::sqlite;
 
 use compress_tools::*;
@@ -14,45 +14,37 @@ use std::fs::File;
 
 // TODO load previous and next images for smoother experience ?
 pub async fn comics(file: &FileInfo, page: i32) -> String {
-    info!("reading {}/{} (page {page}", file.parent_path, file.name);
-    let compressed_comic_file =
-        File::open(format!("{}/{}", file.parent_path, file.name)).expect("file open");
-    // the fn uncompress_archive_file from crate compress_tools does not work here with all files
-    // (KO with CBR), but it works with ArchiveIterator
-    let mut comic_iter = ArchiveIterator::from_read(&compressed_comic_file).expect("iterator");
-    let mut file_path_in_archive = String::default();
+    info!("reading {}/{} (page {page})", file.parent_path, file.name);
+    let archive_path = &format!("{}/{}", file.parent_path, file.name);
+    let compressed_comic_file = File::open(archive_path).expect("file open");
+
+    // get images list from archive
+    let comic_file_list = scanner::extract_comic_image_list(&compressed_comic_file);
+    // set path file wanted from page index
+    let image_path_in_achive = comic_file_list
+        .get(page as usize)
+        .expect("get file path from file list at");
+    // uncompress corresponding image
     let mut vec_comic_page: Vec<u8> = Vec::default();
-    // the ArchiveIterator index does not fit the files index in archive so I have to create my own
-    let mut index: usize = 0;
-    for content in &mut comic_iter {
-        match content {
-            ArchiveContents::StartOfEntry(s, _) => file_path_in_archive = s,
-            ArchiveContents::DataChunk(vec_chunk) => {
-                // add chunks in the image Vec
-                if index == page as usize {
-                    for chunk in vec_chunk {
-                        vec_comic_page.push(chunk);
-                    }
-                }
-            }
-            ArchiveContents::EndOfEntry => {
-                // increase index in case of new file
-                index += 1;
-            }
-            ArchiveContents::Err(e) => {
-                error!(
-                    "can't extract path {} in comic file {}/{} {e}",
-                    file_path_in_archive, file.parent_path, file.name
-                );
-            }
-        }
+
+    // RAR need to reopen file... why ? and why rar only ?
+    let compressed_comic_file = File::open(archive_path).expect("file open");
+    match uncompress_archive_file(
+        &compressed_comic_file,
+        &mut vec_comic_page,
+        image_path_in_achive,
+    ) {
+        Ok(_) => (),
+        Err(e) => error!(
+            "unable to extract path '{}' from file '{}' : {e}",
+            image_path_in_achive, file.name
+        ),
     }
-    comic_iter.close().unwrap();
     // return img in base64
     match image::load_from_memory(&vec_comic_page) {
         Ok(img) => {
             format!(
-                // TODO create a `page` router to render directly (no b64)
+                // TODO create a `page` router to render directly without base64
                 "<img src=\"data:image/jpeg;base64,{}\")",
                 sqlite::image_to_base64(&img)
             )
