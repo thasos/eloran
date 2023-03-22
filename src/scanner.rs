@@ -729,7 +729,10 @@ pub fn extract_comic_image_list(archive: &File) -> Vec<String> {
     let mut image_list = Vec::default();
     for file_path in comic_file_list.into_iter() {
         // TODO can be something else that .jpg ?
-        if file_path.contains(".jpg") {
+        if file_path.to_lowercase().contains(".jpg")
+            || file_path.to_lowercase().contains(".jpeg")
+            || file_path.to_lowercase().contains(".png")
+        {
             image_list.push(file_path);
         }
     }
