@@ -713,7 +713,15 @@ pub fn extract_epub_cover(file: &FileInfo) -> Option<image::DynamicImage> {
 // filter a list of files in archives to keep only images with thier indexes
 // fn extract_comic_image_list(archive: &str) -> Vec<(usize, String)> {
 pub fn extract_comic_image_list(archive: &File) -> Vec<String> {
-    let comic_file_list = list_archive_files(archive).expect("list_archive_files");
+    // thread '<unnamed>' panicked at 'list_archive_files: Utf(Utf8Error { valid_up_to: 20, error_len: Some(1) })', src/scanner.rs:716:55
+
+    let comic_file_list = match list_archive_files(archive) {
+        Ok(list) => list,
+        Err(e) => {
+            error!("unable to extract file list form archive : {e}");
+            Vec::default()
+        }
+    };
     // TODO use drain_filter when it will be stable
     // see https://github.com/rust-lang/rust/issues/43244
     let mut image_list = Vec::default();
