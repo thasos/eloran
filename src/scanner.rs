@@ -643,26 +643,28 @@ pub fn extract_pdf_cover(file: &FileInfo) -> Option<image::DynamicImage> {
                     .filter(|o| matches!(**o, XObject::Image(_))),
             );
 
-            if let Some(first_object) = cover_images.first() {
-                let image = match **first_object {
-                    XObject::Image(ref im) => Some(im),
-                    _ => None,
-                };
-                let (data, _filter) = image.expect("image option").raw_image_data(&doc).unwrap();
+            let first_object = cover_images.first()?;
+            let image = match **first_object {
+                XObject::Image(ref im) => Some(im),
+                _ => None,
+            };
+            let data = match image?.raw_image_data(&doc) {
+                Ok(toot) => Some(toot.0),
+                Err(e) => {
+                    error!("unable to read raw image for file {} : {e}", &file.name);
+                    None
+                }
+            };
+            let vec_cover = data?.to_vec();
 
-                let vec_cover = data.to_vec();
-
-                // resize and insert
-                match image::load_from_memory(&vec_cover) {
-                    Ok(img) => cover = Some(resize_cover(img)),
-                    Err(_) => {
-                        warn!("I can't decode cover image for file {full_path}");
-                    }
-                };
-                cover
-            } else {
-                None
-            }
+            // resize and insert
+            match image::load_from_memory(&vec_cover) {
+                Ok(img) => cover = Some(resize_cover(img)),
+                Err(_) => {
+                    warn!("I can't decode cover image for file {full_path}");
+                }
+            };
+            cover
         } else {
             None
         }
