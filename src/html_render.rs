@@ -62,14 +62,37 @@ pub fn logout(user: &User) -> String {
     render(body_content)
 }
 
-pub fn file_info(user: &User, file: &FileInfo) -> String {
+pub fn file_info(user: &User, file: &FileInfo, bookmark_status: bool, read_status: bool) -> String {
     let menu = menu(user.clone());
     let file = file.clone();
+    // TODO true init
     let body_content = box_html! {
         : menu;
         div(id="infos") {
             h2(style="text-align: center;") {
                 a(href=format!("/read/{}/{}", file.id, file.current_page)) : "read file";
+            }
+            h4(style="text-align: center;") {
+                : if bookmark_status { "⭐" } else { "" };
+                : if read_status { "✅" } else { "" };
+            }
+        }
+    };
+    render(body_content)
+}
+
+pub fn bookmark_toggle(user: &User, bookmark_status: bool) -> String {
+    let menu = menu(user.clone());
+    let bookmark_flag = if bookmark_status {
+        "Bookmark added"
+    } else {
+        "Bookmark deleted"
+    };
+    let body_content = box_html! {
+        : menu;
+        div(id="toggle") {
+            h2(style="text-align: center;") {
+                : bookmark_flag;
             }
         }
     };
@@ -109,7 +132,7 @@ pub fn library(
     user: &User,
     current_path: String,
     directories_list: Vec<DirectoryInfo>,
-    files_list: Vec<FileInfo>,
+    files_list: Vec<(FileInfo, bool, bool)>,
     library_path: String,
 ) -> String {
     debug!("fn homepage");
@@ -151,10 +174,13 @@ pub fn library(
             }
             @ for file in &files_list {
                 div(class="gallery", style="box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);") {
-                    // TODO add field `current page` instead of page 0...
-                    a(href=format!("/infos/{}", &file.id)) {
-                        img(src=format!("/cover/{}", &file.id), alt="green book", width="150", height="230")
-                        : format_args!("{}", file.name)
+                    a(href=format!("/infos/{}", &file.0.id)) {
+                        img(src=format!("/cover/{}", &file.0.id), alt="cover", width="150", height="230")
+                        : format_args!("{}", file.0.name);
+                    }
+                    h4(style="text-align: center;") {
+                        : if file.1 { "⭐" } else { "" };
+                        : if file.2 { "✅" } else { "" };
                     }
                 }
             }

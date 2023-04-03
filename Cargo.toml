@@ -22,6 +22,8 @@ base64 = "0.21.0"
 compress-tools = "0.14.0"
 pdf = "0.8.0"
 libc = "0.2.140"
+clap = "4.1.13"
+config = "0.13.3"
 [dependencies.axum-login]
 version = "0.4"
 features = ["sqlite"]

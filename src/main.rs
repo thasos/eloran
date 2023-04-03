@@ -1,3 +1,4 @@
+mod conf;
 mod html_render;
 mod http_server;
 mod reader;
@@ -9,42 +10,39 @@ extern crate log;
 #[macro_use]
 extern crate horrorshow;
 use std::io::Error;
-use std::path::Path;
 use std::time::Duration;
+
+use crate::conf::init_conf;
 
 const DB_URL: &str = "sqlite://sqlite/eloran.db";
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    env_logger::init();
-    const CARGO_PKG_VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
-    info!(
-        "starting up version={}",
-        CARGO_PKG_VERSION.unwrap_or("version not found")
-    );
+    // conf
+    let conf: conf::Conf = init_conf();
 
-    // TODO use this const...
+    // databases
     sqlite::init_database().await;
-    // TODO only if needed...
     sqlite::init_users(DB_URL).await;
 
+    // start routines
+    // scan the library files and add them in database
     tokio::spawn(async {
-        // TODO lib path in conf, need more checks of library ?
-        let library_path = Path::new("library_test");
-        // let library_path = Path::new("/home/thasos/books");
-        // let library_path = Path::new("/palanthas/bd/bd");
-        info!(
-            "start scanner routine on library {}",
-            library_path.to_string_lossy()
-        );
-        // TODO true error handling
-        let sleep_time = Duration::from_secs(35);
-        scanner::scan_routine(library_path, sleep_time).await;
+        info!("start scanner routine");
+        let sleep_time = Duration::from_secs(60);
+        scanner::scan_routine(conf.library_path, sleep_time).await;
+    });
+    // retrieve files list from database and extract covers and some metadatas
+    tokio::spawn(async {
+        info!("start extractor routine");
+        // 100 files per 10 second
+        let extraction_speed = 100;
+        let sleep_time = Duration::from_secs(10);
+        scanner::extraction_routine(extraction_speed, sleep_time).await;
     });
 
-    // TODO true error handling
-    debug!("try to start http server");
-    http_server::start_http_server().await?;
+    // start web server
+    http_server::start_http_server(&conf.bind).await?;
 
     Ok(())
 }

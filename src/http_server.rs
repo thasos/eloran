@@ -1,6 +1,6 @@
 use crate::html_render::{self, login_ok};
 use crate::reader;
-use crate::scanner::{DirectoryInfo, FileInfo};
+use crate::scanner::{self, DirectoryInfo, FileInfo};
 use crate::sqlite;
 
 use axum::http::header;
@@ -122,8 +122,27 @@ async fn infos_handler(
 ) -> impl IntoResponse {
     let conn = sqlite::create_sqlite_pool().await;
     let file = sqlite::get_files_from_id(&id, &conn).await;
+    // total_page = 0, we need to scan it
+    if file.scan_me == 1 {
+        scanner::extract_all(&file, &conn).await;
+    }
+    // we need user_id for bookmark and read status
+    let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
+    let bookmark_status = sqlite::get_flag_status("bookmark", user_id, &file.id, &conn).await;
     conn.close().await;
-    Html(html_render::file_info(&user, &file))
+    Html(html_render::file_info(&user, &file, bookmark_status, false))
+}
+
+/// add/remove bookmark of a file for a user
+async fn bookmarks_handler(
+    Extension(user): Extension<User>,
+    Path(file_id): Path<String>,
+) -> impl IntoResponse {
+    let conn = sqlite::create_sqlite_pool().await;
+    let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
+    let bookmark_status = sqlite::set_flag_status("bookmark", user_id, file_id, &conn).await;
+    conn.close().await;
+    Html(html_render::bookmark_toggle(&user, bookmark_status))
 }
 
 async fn cover_handler(
@@ -182,6 +201,10 @@ async fn reader_handler(
     let conn = sqlite::create_sqlite_pool().await;
     info!("get /reader/{} (page {}) : {}", &id, &page, &user.name);
     let file = sqlite::get_files_from_id(&id, &conn).await;
+    // total_page = 0, we need to scan it
+    if file.scan_me == 1 {
+        scanner::extract_all(&file, &conn).await;
+    }
     // set page at current_page
     sqlite::set_current_page_from_id(&file.id, &page, &conn).await;
 
@@ -235,7 +258,11 @@ async fn library_handler(
         None => String::new(),
     };
 
-    let files_list: Vec<FileInfo> = {
+    // we need user_id for bookmark and read status
+    let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
+
+    // TODO add bookmark and read status with get_bookmark_status()
+    let files_list_with_status: Vec<(FileInfo, bool, bool)> = {
         info!("get /library{} : {}", path, user.name);
         // TODO set limit in conf
         let files_list: Vec<FileInfo> = match sqlx::query_as(&format!(
@@ -253,7 +280,14 @@ async fn library_handler(
                 empty_list
             }
         };
-        files_list
+        // add bookmark and read status to the list
+        let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = Vec::default();
+        for file in files_list {
+            let bookmark_status =
+                sqlite::get_flag_status("bookmark", user_id, &file.id, &conn).await;
+            files_list_with_status.push((file, bookmark_status, false));
+        }
+        files_list_with_status
     };
 
     let directories_list: Vec<DirectoryInfo> = {
@@ -281,7 +315,7 @@ async fn library_handler(
         &user,
         path,
         directories_list,
-        files_list,
+        files_list_with_status,
         library_path,
     ))
 }
@@ -371,6 +405,10 @@ async fn create_router() -> Router {
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::User..,
         ))
+        .route("/bookmark/:id", get(bookmarks_handler))
+        .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
+            Role::User..,
+        ))
         .route("/read/:id/:page", get(reader_handler))
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::User..,
@@ -406,12 +444,18 @@ async fn create_router() -> Router {
         )
 }
 
-pub async fn start_http_server() -> Result<(), Error> {
+use std::net::SocketAddr;
+use std::net::SocketAddrV4;
+use std::str::FromStr;
+pub async fn start_http_server(bind: &str) -> Result<(), Error> {
+    info!("start http server on {}", bind);
+    // TODO handle error, and default value
+    let bind = SocketAddrV4::from_str(bind).unwrap();
+    let bind = SocketAddr::from(bind);
     let router = create_router();
 
     // TODO check si server bien started
-    info!("(FAKE) http server started on 0.0.0.0:3000 (FAKE)");
-    axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
+    axum::Server::bind(&bind)
         .serve(router.await.into_make_service())
         .await
         .unwrap();

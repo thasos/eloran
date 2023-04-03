@@ -77,13 +77,14 @@ CREATE TABLE IF NOT EXISTS files (
   id ULID PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
   parent_path TEXT NOT NULL,
-  read_status BOOLEAN DEFAULT FALSE,
   scan_me BOOLEAN DEFAULT TRUE,
   added_date INTEGER NOT NULL,
   format TEXT DEFAULT NULL,
   size INTEGER NOT NULL DEFAULT 0,
   total_pages INTEGER NOT NULL DEFAULT 0,
-  current_page INTEGER NOT NULL DEFAULT 0
+  current_page INTEGER NOT NULL DEFAULT 0,
+  read_by TEXT DEFAULT NULL,
+  bookmarked_by TEXT DEFAULT NULL
 );
 CREATE TABLE IF NOT EXISTS covers (
   id ULID PRIMARY KEY NOT NULL,
@@ -312,6 +313,124 @@ pub async fn get_cover_from_id(file: &FileInfo, conn: &Pool<Sqlite>) -> Option<V
                 file.parent_path, file.name
             );
             None
+        }
+    }
+}
+
+/// set scan_me flag
+pub async fn set_scan_flag(file: &FileInfo, flag: i8, conn: &Pool<Sqlite>) {
+    match sqlx::query("UPDATE files SET scan_me = ? WHERE id = ?;")
+        .bind(flag)
+        .bind(&file.id)
+        .execute(conn)
+        .await
+    {
+        Ok(_) => debug!(
+            "total_pages updated for file {}/{}",
+            file.parent_path, file.name
+        ),
+        Err(e) => error!(
+            "failed to update total_pages for file {}/{} : {e}",
+            file.parent_path, file.name
+        ),
+    };
+}
+
+// TODO create EloranUser struct ?
+pub async fn get_user_id_from_name(user_name: &str, conn: &Pool<Sqlite>) -> i32 {
+    let user_id: i32 = match sqlx::query("SELECT id FROM users WHERE name = ?;")
+        .bind(user_name)
+        .fetch_one(conn)
+        .await
+    {
+        Ok(id) => id.get("id"),
+        Err(e) => {
+            error!("failed to get id from user name {} : {e}", user_name);
+            // return a fake user id, good practice ?
+            // TODO Some is better
+            -1
+        }
+    };
+    user_id
+}
+
+pub async fn set_flag_status(
+    // TODO use flag to standardise this fn
+    flag: &str,
+    user_id: i32,
+    file_id: String,
+    conn: &Pool<Sqlite>,
+) -> bool {
+    // retrieve fav_list for user
+    match sqlx::query("SELECT bookmarked_by FROM files WHERE id = ?;")
+        .bind(&file_id)
+        .fetch_one(conn)
+        .await
+    {
+        Ok(user_list) => {
+            let bookmark_status: bool;
+            let user_list_string: String = user_list.get("bookmarked_by");
+            let updated_user_list = if user_list_string.is_empty() {
+                bookmark_status = true;
+                user_id.to_string()
+            } else {
+                // create new list
+                // String `1,2,3,...` to Vec `[1, 2, 3, ...]`
+                let mut user_list_vec: Vec<String> =
+                    user_list_string.split(',').map(|x| x.to_string()).collect();
+                // insert or remove user form list
+                if let Ok(found_user_index) = user_list_vec.binary_search(&user_id.to_string()) {
+                    bookmark_status = false;
+                    user_list_vec.remove(found_user_index);
+                } else {
+                    bookmark_status = true;
+                    user_list_vec.push(user_id.to_string());
+                }
+                // Vec `[1, 2, 3, ...]` to String `1,2,3,...`
+                user_list_vec.join(",")
+            };
+            // set status
+            match sqlx::query("UPDATE files SET bookmarked_by = ? WHERE id = ?;")
+                .bind(updated_user_list)
+                .bind(&file_id)
+                .execute(conn)
+                .await
+            {
+                Ok(_) => debug!("bookmarks {} added to user {}", file_id, user_id),
+                Err(e) => error!(
+                    "failed to add bookmarks {} to user {} : {e}",
+                    file_id, user_id,
+                ),
+            };
+            bookmark_status
+        }
+        Err(e) => {
+            error!(
+                "failed to add bookmarks {} to user {} : {e}",
+                file_id, user_id,
+            );
+            false
+        }
+    }
+}
+
+pub async fn get_flag_status(flag: &str, user_id: i32, file_id: &str, conn: &Pool<Sqlite>) -> bool {
+    let (request, column) = match flag {
+        "bookmark" => (
+            "SELECT bookmarked_by FROM files WHERE id = ?;",
+            "bookmarked_by",
+        ),
+        "read" => ("SELECT read_by FROM files WHERE id = ?;", "read_by"),
+        _ => ("", ""),
+    };
+    match sqlx::query(request).bind(file_id).fetch_one(conn).await {
+        Ok(user_list) => {
+            let user_list: String = user_list.get(column);
+            user_list.contains(&user_id.to_string())
+        }
+        Err(e) => {
+            error!("unable to retrieve flag for file {file_id} : {e}");
+            false
         }
     }
 }

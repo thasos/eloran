@@ -24,7 +24,6 @@ pub struct FileInfo {
     pub parent_path: String,
     // no bool in sqlite :( , `stored as integers 0 (false) and 1 (true)`
     // see https://www.sqlite.org/datatype3.html
-    pub read_status: i8,
     pub scan_me: i8,
     pub added_date: i64,
     pub format: String,
@@ -34,6 +33,9 @@ pub struct FileInfo {
     pub size: i64,
     pub total_pages: i32,
     pub current_page: i32,
+    // list of users id separated by comma : `id1,id2,...`
+    pub read_by: String,
+    pub bookmarked_by: String,
 }
 impl FileInfo {
     pub fn new() -> FileInfo {
@@ -43,13 +45,14 @@ impl FileInfo {
             name: "".to_string(),
             parent_path: "".to_string(),
             added_date: 0,
-            read_status: 0,
             scan_me: 1,
             format: "".to_string(),
             // format: Format::Other,
             size: 0,
             total_pages: 0,
             current_page: 0,
+            read_by: "".to_string(),
+            bookmarked_by: "".to_string(),
         }
     }
 }
@@ -130,12 +133,13 @@ fn extract_file_infos(entry: &Path) -> FileInfo {
         name: filename,
         parent_path,
         added_date: since_the_epoch.as_secs() as i64,
-        read_status: 0,
         scan_me: 1,
         format,
         size: size.unwrap_or(0) as i64,
         total_pages: 0,
         current_page: 0,
+        read_by: "".to_string(),
+        bookmarked_by: "".to_string(),
     }
 }
 
@@ -149,8 +153,8 @@ async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Pool<Sq
     };
     file.id = ulid;
     match sqlx::query(
-        "INSERT OR REPLACE INTO files(id, name, parent_path, size, added_date, scan_me, read_status, format, current_page, total_pages)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
+        "INSERT OR REPLACE INTO files(id, name, parent_path, size, added_date, scan_me, format, current_page, total_pages, read_by, bookmarked_by)
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
         .bind(&file.id)
         // escape ' with '' in sqlite...
         .bind(file.name.replace('\'', "''"))
@@ -158,18 +162,17 @@ async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Pool<Sq
         .bind(file.size)
         .bind(file.added_date)
         .bind(file.scan_me)
-        .bind(file.read_status)
         .bind(&file.format)
         .bind(file.current_page)
         .bind(file.total_pages)
+        .bind(&file.read_by)
+        .bind(&file.bookmarked_by)
         .execute(conn).await {
         Ok(_) => {
             debug!("file insertion successfull")
         }
         Err(e) => error!("file insertion failed : {e}"),
     };
-    extract_page_number(file, conn).await;
-    extract_cover(file, conn).await;
 }
 
 /// delete a file in database
@@ -471,10 +474,50 @@ fn walk_recent_files_and_insert(
         })
 }
 
+/// get files who need to be scanned (field `scan_me` in database) and extract some informations
+pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
+    // wait a few seconds before start, let some time to the scan routine to add some files
+    tokio::time::sleep(Duration::from_secs(10)).await;
+
+    // create a database connection and start main loop
+    let conn = sqlite::create_sqlite_pool().await;
+    loop {
+        info!("start extraction");
+        // TODO set extraction limit in conf ? (extraction speed)
+        let files_to_scan_list: Vec<FileInfo> =
+            match sqlx::query_as("SELECT * FROM files WHERE scan_me = '1' LIMIT ?;")
+                .bind(speed)
+                .fetch_all(&conn)
+                .await
+            {
+                Ok(file_found) => file_found,
+                Err(e) => {
+                    error!("unable to retrieve file list to scan : {}", e);
+                    let empty_list: Vec<FileInfo> = Vec::new();
+                    empty_list
+                }
+            };
+        if files_to_scan_list.is_empty() {
+            info!("0 file need to be scanned")
+        }
+
+        for file_to_scan in files_to_scan_list {
+            extract_all(&file_to_scan, &conn).await;
+        }
+        // TODO true schedule, last extract status in db...
+        info!(
+            "stop extraction, sleeping for {} seconds",
+            sleep_time.as_secs()
+        );
+        tokio::time::sleep(sleep_time).await;
+    }
+}
+
 /// scan library path and add files in db
 // batch insert -> no speed improvement
 // TODO check total number file found, vs total in db (for insert errors) ?
-pub async fn scan_routine(library_path: &Path, sleep_time: Duration) {
+pub async fn scan_routine(library_path: String, sleep_time: Duration) {
+    let library_path = Path::new(&library_path);
     // register library_path in database if not present
     let conn = sqlite::create_sqlite_pool().await;
 
@@ -587,7 +630,8 @@ pub fn dynamic_image_to_vec_u8(image: DynamicImage) -> Vec<u8> {
     vec_u8_image.to_owned()
 }
 
-pub async fn extract_cover(file: &FileInfo, conn: &Pool<Sqlite>) {
+pub async fn extract_all(file: &FileInfo, conn: &Pool<Sqlite>) {
+    // cover
     let dynamic_image_cover = match file.format.as_str() {
         "epub" => extract_epub_cover(file),
         "pdf" => extract_pdf_cover(file),
@@ -599,15 +643,15 @@ pub async fn extract_cover(file: &FileInfo, conn: &Pool<Sqlite>) {
         let buffered_u8_cover = dynamic_image_to_vec_u8(cover);
         sqlite::insert_cover(file, &buffered_u8_cover, conn).await
     }
-}
-
-pub async fn extract_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
+    // total_pages
     match file.format.as_str() {
         "epub" => extract_epub_page_number(file, conn).await,
         "pdf" => extract_pdf_page_number(file, conn).await,
         "cbz" | "cbr" | "cb7" => extract_comic_page_number(file, conn).await,
         _ => (),
     }
+    // scan_flag
+    sqlite::set_scan_flag(file, 0, conn).await;
 }
 
 pub async fn extract_pdf_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
@@ -695,6 +739,7 @@ pub fn extract_epub_cover(file: &FileInfo) -> Option<image::DynamicImage> {
             // (vec![], String::new())
             vec![]
         };
+
         match image::load_from_memory(&vec_cover) {
             // match image::load_from_memory(&cover.0) {
             Ok(img) => {
@@ -717,9 +762,43 @@ pub fn extract_epub_cover(file: &FileInfo) -> Option<image::DynamicImage> {
 pub fn extract_comic_image_list(archive: &File) -> Vec<String> {
     // thread '<unnamed>' panicked at 'list_archive_files: Utf(Utf8Error { valid_up_to: 20, error_len: Some(1) })', src/scanner.rs:716:55
 
+    // // encoding prb
+    // // T03 - La Marque Des Demons.cbz
+    // // unable to extract file list form archive : invalid utf-8 sequence of 1 bytes from index 20
+    // // thread 'tokio-runtime-worker' panicked at 'get file path from file list at', src/reader.rs:26:18
+    // // following code does not work, must find the correct encoding
+    // // --------------
+    // use encoding_rs::{GBK, SHIFT_JIS};
+    // let decode_gbk = |bytes: &[u8]| {
+    //     GBK.decode_without_bom_handling_and_without_replacement(bytes)
+    //         .map(String::from)
+    //         .ok_or(Error::Encoding(std::borrow::Cow::Borrowed("GBK failure")))
+    // };
+    // let decode_sjis = |bytes: &[u8]| {
+    //     SHIFT_JIS
+    //         .decode_without_bom_handling_and_without_replacement(bytes)
+    //         .map(String::from)
+    //         .ok_or(Error::Encoding(std::borrow::Cow::Borrowed(
+    //             "SHIFT_JIS failure",
+    //         )))
+    // };
+    // // let decode_utf8 = |bytes: &[u8]| Ok(std::str::from_utf8(bytes)?.to_owned());
+    // let file_list = list_archive_files_with_encoding(archive, decode_sjis).expect("MYTEST");
+    // use std::ffi::OsStr;
+    // use std::os::unix::ffi::OsStrExt;
+    // let mut comic_file_list: Vec<String> = Vec::default();
+    // for file in file_list {
+    //     let vecu8 = file.into_bytes();
+    //     let os_str = OsStr::from_bytes(&vecu8[..]);
+    //     let pathh = os_str.to_string_lossy().into_owned();
+    //     comic_file_list.push(pathh);
+    //     // error!("pathh : {pathh}");
+    // }
+
     let comic_file_list = match list_archive_files(archive) {
         Ok(list) => list,
         Err(e) => {
+            // 🔥🔥🔥 TODO 🔥🔥🔥 probably an encoding prb, error to warn (or info), and loop with ArchiveIterator...
             error!("unable to extract file list form archive : {e}");
             Vec::default()
         }
@@ -741,50 +820,84 @@ pub fn extract_comic_image_list(archive: &File) -> Vec<String> {
 }
 
 pub async fn extract_comic_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
-    let compressed_comic_file =
-        File::open(format!("{}/{}", file.parent_path, file.name)).expect("file open");
-    let file_list = extract_comic_image_list(&compressed_comic_file);
-    let total_pages = file_list.len();
-    sqlite::insert_total_pages(file, total_pages as i32, conn).await;
+    if let Ok(compressed_comic_file) = File::open(format!("{}/{}", file.parent_path, file.name)) {
+        let file_list = extract_comic_image_list(&compressed_comic_file);
+        let total_pages = file_list.len();
+        sqlite::insert_total_pages(file, total_pages as i32, conn).await;
+    }
 }
 
 pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
     let archive_path = &format!("{}/{}", file.parent_path, file.name);
-    let compressed_comic_file = File::open(archive_path).expect("file open");
-    // get images list from archive
-    let comic_file_list = extract_comic_image_list(&compressed_comic_file);
-    // set path file wanted from page index
-    let image_path_in_achive = match comic_file_list.first() {
-        Some(path) => path,
-        None => {
-            error!("could not retrive cover in archive");
-            ""
+    if let Ok(compressed_comic_file) = File::open(archive_path) {
+        // get images list from archive
+        let comic_file_list = extract_comic_image_list(&compressed_comic_file);
+        // set path file wanted from page index
+        let image_path_in_achive = match comic_file_list.first() {
+            Some(path) => path,
+            None => {
+                error!("could not retrive cover in archive");
+                ""
+            }
+        };
+        // uncompress corresponding image
+        let mut vec_cover: Vec<u8> = Vec::default();
+        // RAR need to reopen file... why ? and why rar only ?
+        let compressed_comic_file = File::open(archive_path).expect("file open");
+        match uncompress_archive_file(&compressed_comic_file, &mut vec_cover, image_path_in_achive)
+        {
+            Ok(_) => (),
+            Err(e) => error!(
+                "unable to extract path '{}' from file '{}' : {e}",
+                image_path_in_achive, file.name
+            ),
         }
-    };
-    // uncompress corresponding image
-    let mut vec_cover: Vec<u8> = Vec::default();
-    // RAR need to reopen file... why ? and why rar only ?
-    let compressed_comic_file = File::open(archive_path).expect("file open");
-    match uncompress_archive_file(&compressed_comic_file, &mut vec_cover, image_path_in_achive) {
-        Ok(_) => (),
-        Err(e) => error!(
-            "unable to extract path '{}' from file '{}' : {e}",
-            image_path_in_achive, file.name
-        ),
-    }
 
-    if let Ok(cover) = image::load_from_memory(&vec_cover) {
-        Some(cover)
+        match image::load_from_memory(&vec_cover) {
+            // match image::load_from_memory(&cover.0) {
+            Ok(img) => {
+                let cover = resize_cover(img);
+                Some(cover)
+            }
+            Err(_) => {
+                warn!("I can't decode cover image for file {archive_path}");
+                None
+            }
+        }
     } else {
         None
     }
 }
+
 // TODO easy testing here...
 pub fn resize_cover(cover: image::DynamicImage) -> image::DynamicImage {
     // see doc https://docs.rs/image/0.24.5/image/imageops/enum.FilterType.html
     // for quality of resize (Nearest is ugly)
     // TODO do not keep ratio ? crop ? the max heigh is the most important
-    cover.resize_to_fill(150, 230, FilterType::Triangle)
+    cover.resize(150, 230, FilterType::Triangle)
+
+    // // test crate fast_image_resize ?
+    // use fast_image_resize as fir;
+    // use std::num::NonZeroU32;
+    // let width = NonZeroU32::new(cover.width()).unwrap();
+    // let height = NonZeroU32::new(cover.height()).unwrap();
+    // let src_image = fir::Image::from_vec_u8(
+    //     width,
+    //     height,
+    //     cover.to_rgb8().into_raw(),
+    //     fir::PixelType::U8x3,
+    // )
+    // .unwrap();
+    // let mut src_view: fir::DynamicImageView = src_image.view();
+    // let dst_width = NonZeroU32::new(150).unwrap();
+    // let dst_height = NonZeroU32::new(230).unwrap();
+    // src_view.set_crop_box_to_fit_dst_size(dst_width, dst_height, None);
+    // let mut dst_image = fir::Image::new(dst_width, dst_height, src_view.pixel_type());
+    // let mut dst_view = dst_image.view_mut();
+    // let mut resizer = fir::Resizer::new(fir::ResizeAlg::Convolution(fir::FilterType::Lanczos3));
+    // resizer.resize(&src_view, &mut dst_view).unwrap();
+    // let toto = dst_image.into_vec();
+    // image::load_from_memory(&toto).unwrap()
 }
 
 #[cfg(test)]
@@ -835,7 +948,6 @@ mod tests {
         let skeletion_file = FileInfo {
             name: "T01 - Asterix le Gaulois.pdf".to_string(),
             parent_path: format!("{}/Asterix", library_path.to_string_lossy()),
-            read_status: 0,
             scan_me: 1,
             format: "pdf".to_string(),
             size: 10,
@@ -844,6 +956,8 @@ mod tests {
             // id and added_date are random, so we take them from validation_file
             added_date: validation_file.added_date.clone(),
             id: validation_file.id.clone(),
+            read_by: "".to_string(),
+            bookmarked_by: "".to_string(),
         };
         assert_eq!(validation_file, skeletion_file);
         // delete library
@@ -858,7 +972,6 @@ mod tests {
         let mut skeletion_file = FileInfo {
             name: "T01 - Asterix le Gaulois.pdf".to_string(),
             parent_path: "library/Asterix".to_string(),
-            read_status: 0,
             scan_me: 1,
             format: "pdf".to_string(),
             size: 10,
@@ -867,6 +980,8 @@ mod tests {
             // id and added_date are random, so we take them from validation_file
             added_date: 666,
             id: "666".to_string(),
+            read_by: "".to_string(),
+            bookmarked_by: "".to_string(),
         };
         let conn = sqlite::create_sqlite_pool().await;
         insert_new_file(&mut skeletion_file, None, &conn).await;
