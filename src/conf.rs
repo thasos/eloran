@@ -13,15 +13,12 @@ const DEFAULT_CONFIG_FILE: &str = "settings.yaml";
 
 /// create configuration
 /// priority list : command line > environment variables (todo) > config file
-// TODO conf from env
 pub fn init_conf() -> Conf {
     const CARGO_PKG_VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
     // parse args
     let clap_params = clap_args(CARGO_PKG_VERSION);
     // debug mode
     if clap_params.get_flag("verbose") {
-        // TODO
-        println!("TODO");
         env_logger::builder()
             .filter_level(log::LevelFilter::Debug)
             .format_target(false)

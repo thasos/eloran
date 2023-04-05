@@ -15,6 +15,11 @@ use std::fs::File;
 // TODO load previous and next images for smoother experience ?
 pub async fn comics(file: &FileInfo, page: i32) -> String {
     info!("reading {}/{} (page {page})", file.parent_path, file.name);
+    // mark as read if last page
+    if page == file.total_pages {
+        println!("toto");
+    }
+
     let archive_path = &format!("{}/{}", file.parent_path, file.name);
     match File::open(archive_path) {
         Ok(compressed_comic_file) => {
@@ -45,7 +50,7 @@ pub async fn comics(file: &FileInfo, page: i32) -> String {
                 Ok(img) => {
                     format!(
                         // TODO create a `page` router to render directly without base64
-                        "<img src=\"data:image/jpeg;base64,{}\")",
+                        "<img src=\"data:image/jpeg;base64,{}\" class=\"responsive\")",
                         sqlite::image_to_base64(&img)
                     )
                 }

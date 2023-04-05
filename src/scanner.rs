@@ -156,9 +156,8 @@ async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Pool<Sq
         "INSERT OR REPLACE INTO files(id, name, parent_path, size, added_date, scan_me, format, current_page, total_pages, read_by, bookmarked_by)
                     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
         .bind(&file.id)
-        // escape ' with '' in sqlite...
-        .bind(file.name.replace('\'', "''"))
-        .bind(file.parent_path.replace('\'', "''"))
+        .bind(&file.name)
+        .bind(&file.parent_path)
         .bind(file.size)
         .bind(file.added_date)
         .bind(file.scan_me)
@@ -178,8 +177,8 @@ async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Pool<Sq
 /// delete a file in database
 async fn delete_file(file: &FileInfo, conn: &Pool<Sqlite>) {
     match sqlx::query("DELETE FROM files WHERE name = ? AND parent_path = ?;")
-        .bind(file.name.replace('\'', "''"))
-        .bind(file.parent_path.replace('\'', "''"))
+        .bind(&file.name)
+        .bind(&file.parent_path)
         .execute(conn)
         .await
     {
@@ -196,6 +195,7 @@ async fn get_files_from_directory(
     directory_name: &str,
     conn: &Pool<Sqlite>,
 ) -> Vec<FileInfo> {
+    // WHY here we need to replace ' with '' in sqlite query ???
     let files: Vec<FileInfo> = match sqlx::query_as(&format!(
         "SELECT * FROM files WHERE parent_path = '{}/{}'",
         parent_path.replace('\'', "''"),
@@ -223,7 +223,7 @@ async fn get_registered_directories(conn: &Pool<Sqlite>) -> Vec<DirectoryInfo> {
         {
             Ok(file_found) => file_found,
             Err(e) => {
-                error!("unable to retrieve file infos from database : {}", e);
+                error!("unable to retrieve directories from database : {}", e);
                 let empty_list: Vec<DirectoryInfo> = Vec::new();
                 empty_list
             }
@@ -236,10 +236,7 @@ async fn delete_directory(directory: &DirectoryInfo, conn: &Pool<Sqlite>) {
     match sqlx::query(&format!(
         "DELETE FROM directories WHERE name = '{}' AND parent_path = '{}';
          DELETE FROM files WHERE parent_path = '{}/{}'",
-        directory.name.replace('\'', "''"),
-        directory.parent_path.replace('\'', "''"),
-        directory.parent_path.replace('\'', "''"),
-        directory.name.replace('\'', "''"),
+        directory.name, directory.parent_path, directory.parent_path, directory.name,
     ))
     .execute(conn)
     .await
@@ -262,14 +259,14 @@ async fn check_if_directory_exists(
 ) -> Vec<DirectoryInfo> {
     let directory_found: Vec<DirectoryInfo> =
         match sqlx::query_as("SELECT * FROM directories WHERE name = ? AND parent_path = ?;")
-            .bind(directory_name.replace('\'', "''"))
-            .bind(parent_path.replace('\'', "''"))
+            .bind(directory_name)
+            .bind(parent_path)
             .fetch_all(conn)
             .await
         {
             Ok(dir_found) => dir_found,
             Err(e) => {
-                error!("unable to retrieve file infos from database : {}", e);
+                error!("unable to check if directory exists in database : {}", e);
                 let empty_list: Vec<DirectoryInfo> = Vec::new();
                 empty_list
             }
@@ -285,14 +282,14 @@ async fn check_if_file_exists(
 ) -> Vec<FileInfo> {
     let file_found: Vec<FileInfo> =
         match sqlx::query_as("SELECT * FROM files WHERE name = ? AND parent_path = ?;")
-            .bind(filename.replace('\'', "''"))
-            .bind(parent_path.replace('\'', "''"))
+            .bind(filename)
+            .bind(parent_path)
             .fetch_all(conn)
             .await
         {
             Ok(file_found) => file_found,
             Err(e) => {
-                error!("unable to retrieve file infos from database : {}", e);
+                error!("unable to check in file exists in database : {}", e);
                 let empty_list: Vec<FileInfo> = Vec::new();
                 empty_list
             }
@@ -352,9 +349,8 @@ async fn insert_new_dir(directory: &DirectoryInfo, ulid: Option<&str>, conn: &Po
                     VALUES(?, ?, ?);",
     )
     .bind(ulid)
-    // escape ' with '' in sqlite...
-    .bind(directory.name.replace('\'', "''"))
-    .bind(directory.parent_path.replace('\'', "''"))
+    .bind(&directory.name)
+    .bind(&directory.parent_path)
     .execute(conn)
     .await
     {
@@ -550,7 +546,6 @@ pub async fn scan_routine(library_path: String, sleep_time: Duration) {
                         "new changes in dir {}/{}, need to scan it",
                         current_directory.name, current_directory.parent_path,
                     );
-                    // TODO add dir in db only in fot exists
                     // TODO use struct ....
                     let directory_found = check_if_directory_exists(
                         &current_directory.parent_path,
@@ -610,7 +605,7 @@ pub async fn scan_routine(library_path: String, sleep_time: Duration) {
                 }
             }
             // end scanner, update date if successfull
-            // TODO comment check si successfull ?
+            // TODO how to check if successfull ?
             // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
             update_last_successfull_scan_date(&conn).await;
         }
@@ -987,13 +982,13 @@ mod tests {
         insert_new_file(&mut skeletion_file, None, &conn).await;
         let file_from_base: Vec<FileInfo> =
             match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
-                .bind(&skeletion_file.parent_path.replace('\'', "''"))
+                .bind(&skeletion_file.parent_path)
                 .fetch_all(&conn)
                 .await
             {
                 Ok(file_found) => file_found,
                 Err(e) => {
-                    error!("unable to retrieve file infos from database : {}", e);
+                    error!("unable to insert file infos from database : {}", e);
                     let empty_list: Vec<FileInfo> = Vec::new();
                     empty_list
                 }

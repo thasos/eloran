@@ -1,0 +1,23 @@
+.responsive {
+  width: 100%;
+  height: auto;
+}
+
+a.navigation {
+  text-decoration: none;
+}
+
+.infos {
+  text-align: center;
+}
+
+img.infos {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+img.cover_read {
+  -webkit-filter: brightness(30%); /* Safari 6.0 - 9.0 */
+  filter: brightness(30%);
+}

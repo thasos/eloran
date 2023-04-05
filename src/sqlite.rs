@@ -15,7 +15,6 @@ pub async fn create_sqlite_pool() -> Pool<Sqlite> {
     match SqlitePoolOptions::new()
         .max_lifetime(Duration::from_secs(30))
         .idle_timeout(Duration::from_secs(5))
-        // TODO use const
         .connect(crate::DB_URL)
         .await
     {
@@ -122,26 +121,23 @@ pub async fn set_library_path(library_path: &Path, conn: &Pool<Sqlite>) {
     let path_in_base = get_library_path(conn).await;
     if path_in_base.is_empty() {
         match sqlx::query("INSERT OR IGNORE INTO core(id, library_path) VALUES (1,?);")
-            .bind(library_path.to_string_lossy().replace('\'', "''"))
+            .bind(library_path.to_string_lossy())
             .execute(conn)
             .await
         {
             Ok(_) => info!("library path successfully created"),
             Err(e) => error!("failed to create library path : {}", e),
         }
-    } else {
-        // TODO test si les path sont =
-        if path_in_base != library_path.to_string_lossy() {
-            error!("library path changed ! I need to purge database and recreate it from scratch");
-            match sqlx::query("DELETE FROM core ; DELETE FROM files ; DELETE FROM directories ;")
-                .execute(conn)
-                .await
-            {
-                Ok(_) => info!("database successfully purged"),
-                Err(e) => error!("failed to purge database : {}", e),
-            }
-            init_database().await;
+    } else if path_in_base != library_path.to_string_lossy() {
+        error!("library path changed ! I need to purge database and recreate it from scratch");
+        match sqlx::query("DELETE FROM core ; DELETE FROM files ; DELETE FROM directories ;")
+            .execute(conn)
+            .await
+        {
+            Ok(_) => info!("database successfully purged"),
+            Err(e) => error!("failed to purge database : {}", e),
         }
+        init_database().await;
     }
 }
 
@@ -183,14 +179,17 @@ pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileI
 
     let file: FileInfo =
         match sqlx::query_as("SELECT * FROM files WHERE parent_path = ? AND name = ?;")
-            .bind(parent_path.replace('\'', "''"))
-            .bind(file_name.replace('\'', "''"))
+            .bind(parent_path)
+            .bind(file_name)
             .fetch_one(conn)
             .await
         {
             Ok(file_found) => file_found,
             Err(e) => {
-                error!("unable to retrieve file infos from database : {}", e);
+                error!(
+                    "unable to retrieve file infos from path from database : {}",
+                    e
+                );
                 FileInfo::new()
             }
         };
@@ -199,9 +198,6 @@ pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileI
 
 /// get FileInfo from file id
 pub async fn get_files_from_id(id: &str, conn: &Pool<Sqlite>) -> FileInfo {
-    // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-    // TODO ⚠️ select all but cover ⚠️  no need it in memory...
-    // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
     let file: FileInfo = match sqlx::query_as("SELECT * FROM files WHERE id = ?;")
         .bind(id)
         .fetch_one(conn)
@@ -209,7 +205,10 @@ pub async fn get_files_from_id(id: &str, conn: &Pool<Sqlite>) -> FileInfo {
     {
         Ok(file_found) => file_found,
         Err(e) => {
-            error!("unable to retrieve file infos from database : {}", e);
+            error!(
+                "unable to retrieve file infos from id from database : {}",
+                e
+            );
             FileInfo::new()
         }
     };
@@ -253,7 +252,6 @@ pub async fn set_current_page_from_id(id: &str, page: &i32, conn: &Pool<Sqlite>)
     };
 }
 
-// TODO easy test here
 pub fn image_to_base64(img: &DynamicImage) -> String {
     let mut image_data: Vec<u8> = Vec::new();
     img.write_to(
@@ -358,20 +356,38 @@ pub async fn set_flag_status(
     // TODO use flag to standardise this fn
     flag: &str,
     user_id: i32,
-    file_id: String,
+    file_id: &str,
     conn: &Pool<Sqlite>,
 ) -> bool {
+    // prepare sql queries
+    let (flag_field, select_query, toggle_query) = if flag == "bookmark" {
+        let flag_field = "bookmarked_by";
+        let select_query = "SELECT bookmarked_by FROM files WHERE id = ?;";
+        let toggle_query = "UPDATE files SET bookmarked_by = ? WHERE id = ?;";
+        (flag_field, select_query, toggle_query)
+    } else if flag == "read_status" {
+        let flag_field = "read_by";
+        let select_query = "SELECT read_by FROM files WHERE id = ?;";
+        let toggle_query = "UPDATE files SET read_by = ? WHERE id = ?;";
+        (flag_field, select_query, toggle_query)
+    } else {
+        let flag_field = "";
+        let select_query = "";
+        let toggle_query = "";
+        (flag_field, select_query, toggle_query)
+    };
+
     // retrieve fav_list for user
-    match sqlx::query("SELECT bookmarked_by FROM files WHERE id = ?;")
-        .bind(&file_id)
+    match sqlx::query(select_query)
+        .bind(file_id)
         .fetch_one(conn)
         .await
     {
         Ok(user_list) => {
-            let bookmark_status: bool;
-            let user_list_string: String = user_list.get("bookmarked_by");
+            let flag_status: bool;
+            let user_list_string: String = user_list.get(flag_field);
             let updated_user_list = if user_list_string.is_empty() {
-                bookmark_status = true;
+                flag_status = true;
                 user_id.to_string()
             } else {
                 // create new list
@@ -380,34 +396,34 @@ pub async fn set_flag_status(
                     user_list_string.split(',').map(|x| x.to_string()).collect();
                 // insert or remove user form list
                 if let Ok(found_user_index) = user_list_vec.binary_search(&user_id.to_string()) {
-                    bookmark_status = false;
+                    flag_status = false;
                     user_list_vec.remove(found_user_index);
                 } else {
-                    bookmark_status = true;
+                    flag_status = true;
                     user_list_vec.push(user_id.to_string());
                 }
                 // Vec `[1, 2, 3, ...]` to String `1,2,3,...`
                 user_list_vec.join(",")
             };
             // set status
-            match sqlx::query("UPDATE files SET bookmarked_by = ? WHERE id = ?;")
+            match sqlx::query(toggle_query)
                 .bind(updated_user_list)
-                .bind(&file_id)
+                .bind(file_id)
                 .execute(conn)
                 .await
             {
-                Ok(_) => debug!("bookmarks {} added to user {}", file_id, user_id),
+                Ok(_) => debug!("flag {} {} added to user {}", flag, file_id, user_id),
                 Err(e) => error!(
-                    "failed to add bookmarks {} to user {} : {e}",
-                    file_id, user_id,
+                    "failed to add flag {} {} to user {} : {e}",
+                    flag, file_id, user_id,
                 ),
             };
-            bookmark_status
+            flag_status
         }
         Err(e) => {
             error!(
-                "failed to add bookmarks {} to user {} : {e}",
-                file_id, user_id,
+                "failed to add {} {} to user {} : {e}",
+                flag, file_id, user_id,
             );
             false
         }
@@ -420,7 +436,7 @@ pub async fn get_flag_status(flag: &str, user_id: i32, file_id: &str, conn: &Poo
             "SELECT bookmarked_by FROM files WHERE id = ?;",
             "bookmarked_by",
         ),
-        "read" => ("SELECT read_by FROM files WHERE id = ?;", "read_by"),
+        "read_status" => ("SELECT read_by FROM files WHERE id = ?;", "read_by"),
         _ => ("", ""),
     };
     match sqlx::query(request).bind(file_id).fetch_one(conn).await {
@@ -433,4 +449,19 @@ pub async fn get_flag_status(flag: &str, user_id: i32, file_id: &str, conn: &Poo
             false
         }
     }
+}
+
+pub async fn search_file_from_string(search_query: &str, conn: &Pool<Sqlite>) -> Vec<FileInfo> {
+    let request = format!(
+        "SELECT * FROM files WHERE name LIKE '%{}%' OR parent_path LIKE '%{}%';",
+        search_query, search_query
+    );
+    let results: Vec<FileInfo> = match sqlx::query_as(&request).fetch_all(conn).await {
+        Ok(user_list) => user_list,
+        Err(e) => {
+            error!("unable to search in database : {e}");
+            Vec::default()
+        }
+    };
+    results
 }
