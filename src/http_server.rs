@@ -68,14 +68,68 @@ fn parse_credentials(body: &str) -> (String, String) {
     (username, password)
 }
 
+async fn bookmarks_handler(Extension(user): Extension<User>) -> impl IntoResponse {
+    info!("get /bookmarks : {}", &user.name);
+    let conn = sqlite::create_sqlite_pool().await;
+    // search files
+    let mut files_results = sqlite::bookmarks_for_user_id(user.id, &conn).await;
+    files_results.sort();
+    // add status (read, bookmark)
+    let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
+    let mut files_results_with_status: Vec<(FileInfo, bool, bool)> = Vec::default();
+    for file in files_results {
+        let bookmark_status = sqlite::get_flag_status("bookmark", user_id, &file.id, &conn).await;
+        let read_status = sqlite::get_flag_status("read_status", user_id, &file.id, &conn).await;
+        files_results_with_status.push((file, bookmark_status, read_status));
+    }
+    // lib path
+    let library_path: String = sqlite::get_library_path(&conn).await;
+    conn.close().await;
+    // response
+    let list_to_display = html_render::LibraryDisplay {
+        user: user.clone(),
+        directories_list: Vec::default(),
+        files_list: files_results_with_status,
+        library_path,
+        current_path: None,
+        search_query: None,
+    };
+    Html(html_render::library(list_to_display))
+}
+
 async fn search_handler(Extension(user): Extension<User>, query: String) -> impl IntoResponse {
     info!("get /search : {}", &query);
     // body string is `query=search_string`, we need only the `search_string`
     let query = query.strip_prefix("query=").unwrap();
+    let query = &query.replace('+', " ");
     let conn = sqlite::create_sqlite_pool().await;
-    let results = sqlite::search_file_from_string(query, &conn).await;
+    // search files
+    let mut files_results = sqlite::search_file_from_string(query, &conn).await;
+    files_results.sort();
+    // add status (read, bookmark)
+    let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
+    let mut files_results_with_status: Vec<(FileInfo, bool, bool)> = Vec::default();
+    for file in files_results {
+        let bookmark_status = sqlite::get_flag_status("bookmark", user_id, &file.id, &conn).await;
+        let read_status = sqlite::get_flag_status("read_status", user_id, &file.id, &conn).await;
+        files_results_with_status.push((file, bookmark_status, read_status));
+    }
+    // search dirs
+    let mut directories_results = sqlite::search_directory_from_string(query, &conn).await;
+    directories_results.sort();
+    // lib path
+    let library_path: String = sqlite::get_library_path(&conn).await;
     conn.close().await;
-    Html(html_render::search_result(&user, results))
+    // response
+    let list_to_display = html_render::LibraryDisplay {
+        user: user.clone(),
+        directories_list: directories_results,
+        files_list: files_results_with_status,
+        library_path,
+        current_path: None,
+        search_query: Some(query.to_string()),
+    };
+    Html(html_render::library(list_to_display))
 }
 
 async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse {
@@ -329,7 +383,7 @@ async fn library_handler(
     let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
 
     // TODO add bookmark and read status with get_bookmark_status()
-    let files_list_with_status: Vec<(FileInfo, bool, bool)> = {
+    let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = {
         info!("get /library{} : {}", path, user.name);
         // TODO set limit in conf
         let files_list: Vec<FileInfo> = match sqlx::query_as(&format!(
@@ -358,8 +412,9 @@ async fn library_handler(
         }
         files_list_with_status
     };
+    files_list_with_status.sort();
 
-    let directories_list: Vec<DirectoryInfo> = {
+    let mut directories_list: Vec<DirectoryInfo> = {
         info!("get /library{} : {}", path, user.name);
         // TODO set limit in conf
         let directories_list: Vec<DirectoryInfo> = match sqlx::query_as(&format!(
@@ -379,14 +434,17 @@ async fn library_handler(
         };
         directories_list
     };
+    directories_list.sort();
     conn.close().await;
-    Html(html_render::library(
-        &user,
-        path,
+    let list_to_display = html_render::LibraryDisplay {
+        user: user.clone(),
         directories_list,
-        files_list_with_status,
+        files_list: files_list_with_status,
         library_path,
-    ))
+        current_path: Some(path),
+        search_query: None,
+    };
+    Html(html_render::library(list_to_display))
 }
 
 async fn admin_handler(Extension(user): Extension<User>) -> impl IntoResponse {
@@ -478,6 +536,10 @@ async fn create_router() -> Router {
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::User..,
         ))
+        .route("/bookmarks", get(bookmarks_handler))
+        .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
+            Role::User..,
+        ))
         .route("/search", post(search_handler))
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::User..,
@@ -556,10 +618,10 @@ mod tests {
         sqlite::init_users(DB_URL).await;
         // headers
         let headers = "<!DOCTYPE html><html><head><title>Eloran</title><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width\">";
-        let css = "<link rel=\"stylesheet\" href=\"/css/eloran.css\"><link rel=\"stylesheet\" href=\"/css/w3.css\"><link rel=\"stylesheet\" href=\"/css/gallery.css\"><link rel=\"stylesheet\" href=\"/css/w3-theme-dark-grey.css\">";
+        let css = "<link rel=\"stylesheet\" href=\"/css/eloran.css\"><link rel=\"stylesheet\" href=\"/css/w3.css\"><link rel=\"stylesheet\" href=\"/css/w3-theme-dark-grey.css\">";
         let metas = "<meta http-equiv=\"Cache-Control\" content=\"no-cache, no-store, must-revalidate\"><meta http-equiv=\"Pragma\" content=\"no-cache\"><meta http-equiv=\"Expires\" content=\"0\">";
-        let meta_redir_library = "<meta http-equiv=\"refresh\" content=\"0; url='/library'\" />";
-        let meta_redir_home = "<meta http-equiv=\"refresh\" content=\"0; url='/'\" />";
+        let meta_redir_library = "<meta http-equiv=\"refresh\" content=\"0; url='/library'\">";
+        let meta_redir_home = "<meta http-equiv=\"refresh\" content=\"0; url='/'\">";
         let body = "</head><body class=\"w3-theme-dark\">";
         // create router
         let router = create_router();
@@ -567,7 +629,7 @@ mod tests {
         let client = TestClient::new(router.await);
         let res = client.get("/").send().await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.text().await, format!("{headers}{css}{metas}{body}<h2 id=\"heading\">Welcome to Eloran</h2><p>Please login :</p><p><form action=\"/login\" method=\"post\"><input type=\"text\" name=\"user\" placeholder=\"username\" required><br><input type=\"password\" name=\"password\" placeholder=\"password\" required><br><input type=\"submit\" value=\"Login\"></form></p></body></html>"));
+        assert_eq!(res.text().await, format!("{headers}{css}{metas}{body}<h2 id=\"heading\">Eloran</h2><p>Please login :</p><p><form action=\"/login\" method=\"post\"><input type=\"text\" name=\"user\" placeholder=\"username\" required><br><input type=\"password\" name=\"password\" placeholder=\"password\" required><br><input type=\"submit\" value=\"Login\"></form></p></body></html>"));
         // login
         let res = client
             .post("/login")
@@ -584,19 +646,19 @@ mod tests {
         };
         assert_eq!(
             res.text().await,
-            format!("{headers}{css}{metas}{meta_redir_library}{body}<h2 id=\"heading\">Welcome to Eloran</h2><p>Successfully logged in as: admin, role Admin</p><p><a href=\"/\">return home</a></p></body></html>"));
+            format!("{headers}{css}{metas}{meta_redir_library}{body}<h2 id=\"heading\">Eloran</h2><p>Successfully logged in as: admin, role Admin</p><p><a href=\"/\">return home</a></p></body></html>"));
         // root with auth
         let res = client.get("/").header("Cookie", &cookie).send().await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.text().await, format!("{headers}{css}{metas}{body}<h2 id=\"heading\">Welcome to Eloran</h2><div id=\"menu\"><p><a href=\"/library\">library</a> | <a href=\"/prefs\">preferences</a> | admin (<a href=\"/logout\">logout</a>)</p><form action=\"/search\" method=\"post\"><input type=\"text\" placeholder=\"Search..\" name=\"query\"></form></div><div id=\"home-content\">content</div></body></html>"));
+        assert_eq!(res.text().await, format!("{headers}{css}{metas}{body}<h2 id=\"heading\">Eloran</h2><div id=\"menu\"><p><a href=\"/library\">library</a> | <a href=\"/bookmarks\">bookmarks</a> | <a href=\"/prefs\">preferences</a> | <a href=\"/admin\">administration</a> | admin (<a href=\"/logout\">logout</a>)</p><form action=\"/search\" method=\"post\"><input type=\"text\" placeholder=\"Search..\" name=\"query\"></form></div><div id=\"home-content\">content</div></body></html>"));
         // logout
         let res = client.get("/logout").header("Cookie", &cookie).send().await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.text().await, format!("{headers}{css}{metas}{meta_redir_home}{body}<h2 id=\"heading\">Welcome to Eloran</h2><p>Bye admin</p><p><a href=\"/\">return home</a></p></body></html>"));
+        assert_eq!(res.text().await, format!("{headers}{css}{metas}{meta_redir_home}{body}<h2 id=\"heading\">Eloran</h2><p>Bye admin</p><p><a href=\"/\">return home</a></p></body></html>"));
         // root without auth
         let res = client.get("/").header("Cookie", &cookie).send().await;
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.text().await, format!("{headers}{css}{metas}{body}<h2 id=\"heading\">Welcome to Eloran</h2><p>Please login :</p><p><form action=\"/login\" method=\"post\"><input type=\"text\" name=\"user\" placeholder=\"username\" required><br><input type=\"password\" name=\"password\" placeholder=\"password\" required><br><input type=\"submit\" value=\"Login\"></form></p></body></html>"));
+        assert_eq!(res.text().await, format!("{headers}{css}{metas}{body}<h2 id=\"heading\">Eloran</h2><p>Please login :</p><p><form action=\"/login\" method=\"post\"><input type=\"text\" name=\"user\" placeholder=\"username\" required><br><input type=\"password\" name=\"password\" placeholder=\"password\" required><br><input type=\"submit\" value=\"Login\"></form></p></body></html>"));
         // css error
         let res = client.get("/css/toto").send().await;
         assert_eq!(res.status(), StatusCode::NOT_FOUND);

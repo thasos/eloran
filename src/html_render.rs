@@ -1,5 +1,7 @@
+use crate::http_server::Role;
+use crate::http_server::User;
+use crate::scanner::DirectoryInfo;
 use crate::scanner::FileInfo;
-use crate::{http_server::User, scanner::DirectoryInfo};
 
 use horrorshow::{helper::doctype, Raw, Template};
 
@@ -10,21 +12,14 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
         meta(name="viewport", content="width=device-width");
         link(rel="stylesheet", href="/css/eloran.css");
         link(rel="stylesheet", href="/css/w3.css");
-        link(rel="stylesheet", href="/css/gallery.css");
         link(rel="stylesheet", href="/css/w3-theme-dark-grey.css");
         meta(http-equiv="Cache-Control", content="no-cache, no-store, must-revalidate");
         meta(http-equiv="Pragma", content="no-cache");
         meta(http-equiv="Expires", content="0");
-        // TODO do this better, it's awfull to me :(
         // add a meta tag with url to redirect
-        : if let Some(url) = redirect_url {
-            let redirect_timer = 0;
-            let meta_redirect=format!("<meta http-equiv=\"refresh\" content=\"{redirect_timer}; url='{url}'\" />");
-            Raw(meta_redirect)
-        } else {
-            // else cannot be (), and it's logic...
-            Raw("".to_string())
-        };
+        @ if let Some(url) = redirect_url {
+            meta(http-equiv="refresh", content=format!("0; url='{url}'")) ;
+        }
     }
 }
 
@@ -79,7 +74,7 @@ pub fn file_info(
     read_status: bool,
     up_link: String,
 ) -> String {
-    let menu = menu(user.clone());
+    let menu = menu(user.to_owned(), None);
     let file = file.clone();
     let body_content = box_html! {
         : menu;
@@ -118,7 +113,7 @@ pub fn file_info(
 }
 
 pub fn flag_toggle(user: &User, flag_status: bool, file_id: &str, flag: &str) -> String {
-    let menu = menu(user.clone());
+    let menu = menu(user.to_owned(), None);
     let flag_response = match flag {
         "bookmark" => {
             if flag_status {
@@ -149,7 +144,7 @@ pub fn flag_toggle(user: &User, flag_status: bool, file_id: &str, flag: &str) ->
 }
 
 pub fn ebook_reader(user: &User, file: &FileInfo, epub_content: &str, page: i32) -> String {
-    let menu = menu(user.clone());
+    let menu = menu(user.to_owned(), None);
     let epub_content = epub_content.to_string();
     let file = file.clone();
     // don't go outside the range of the book
@@ -184,53 +179,88 @@ pub fn ebook_reader(user: &User, file: &FileInfo, epub_content: &str, page: i32)
     render(body_content, None)
 }
 
-pub fn library(
-    user: &User,
-    current_path: String,
-    directories_list: Vec<DirectoryInfo>,
-    files_list: Vec<(FileInfo, bool, bool)>,
-    library_path: String,
-) -> String {
-    debug!("fn homepage");
-    // TODO add comment
-    let mut full_path: Vec<&str> = current_path.split('/').collect();
-    full_path.pop();
-    let mut parent_directory = String::new();
-    // TODO better variable name
-    for word in full_path {
-        parent_directory.push_str(word);
-        parent_directory.push('/');
-    }
-    parent_directory.pop();
+pub struct LibraryDisplay {
+    pub user: User,
+    pub directories_list: Vec<DirectoryInfo>,
+    pub files_list: Vec<(FileInfo, bool, bool)>,
+    pub library_path: String,
+    pub current_path: Option<String>,
+    pub search_query: Option<String>,
+    // TODO need search query option string
+}
 
-    // TODO moche (obligé le clone  ?)
-    let menu = menu(user.clone());
+pub fn library(list_to_display: LibraryDisplay) -> String {
+    debug!("fn homepage");
+    // we dispose of following variables :
+    // - directory.name : Subdir2
+    // - directory.parent_path : /home/thasos/mylibrary/Dragonlance
+    // - current_path : /library/Dragonlance/Subdir1
+    // - library_path : /home/thasos/mylibrary
+    // we need (assume we are un Subdir1):
+    // - the url path for up link : /library/Dragonlance
+    // - current disk path : /home/thasos/mylibrary/Dragonlance/Subdir1
+    // - directory url path : /library/Dragonlance/Subdir1/Subdir2
+
+    // unless search, we need to construct an up_link
+    let mut up_link = String::new();
+    if let Some(current_path) = list_to_display.current_path.clone() {
+        let mut full_path: Vec<&str> = current_path.split('/').collect();
+        full_path.pop();
+        // TODO better variable name
+        for word in full_path {
+            up_link.push_str(word);
+            up_link.push('/');
+        }
+        up_link.pop();
+    }
+
+    // html rendering
+    let menu = menu(
+        list_to_display.user.to_owned(),
+        list_to_display.search_query.to_owned(),
+    );
     let body_content = box_html! {
         : menu;
         div(id="library-content") {
-            p {
-                : "disk path = ";
-                // TODO split and add a direct link for each element in path
-                : format!("{library_path}{}", &current_path);
+            // if we have a current_path, we can display some infos (unavailable in search)
+            @ if let Some(current_path) = list_to_display.current_path {
+                p {
+                    // TODO split and add a direct link for each element in path
+                    : format!("disk path = {}{}", list_to_display.library_path, &current_path);
+                }
+                h2 { a(href=format!("/library{}", &up_link), class="navigation") : "↖️  up" }
             }
-            h2 { a(href=format!("/library{}", &parent_directory), class="navigation") : "↖️  up" }
             // image gallery
             // https://www.w3schools.com/Css/css_image_gallery.asp
-            @ for directory in &directories_list {
-                div(class="gallery", style="box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);") {
-                    a(href=format!("/library{}/{}", &current_path, &directory.name)) {
-                        img(src="/images/folder.svgz", alt="folder", width="150", height="230")
-                        : format_args!("{}", directory.name)
+            @ for directory in &list_to_display.directories_list.to_owned() {
+                div(class="gallery box_shadow container") {
+                    // remove disk parent path for url construction
+                    a(href=format!("/library{}/{}", &directory.parent_path.replace(&list_to_display.library_path.to_owned(), ""), &directory.name)) {
+                        div(class="cover") {
+                            img(src="/images/folder.svgz", alt="folder", width="150", height="230");
+                            @ if let Some(file_number) = directory.file_number{
+                                div(class="file_number") {
+                                    : file_number;
+                                }
+                            }
+                        }
+                        div(class="gallery_desc") {
+                            : format_args!("{}", directory.name)
+                        }
                     }
                 }
             }
-            @ for file in &files_list {
-                div(class="gallery", style="box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);") {
+            @ for file in &list_to_display.files_list.to_owned() {
+                div(class="gallery box_shadow container") {
                     a(href=format!("/infos/{}", &file.0.id)) {
-                        img(src=format!("/cover/{}", &file.0.id), alt="cover", width="150", height="230", class= if file.2 { "cover_read" } else { "cover" } )
-                        : format_args!("{}", file.0.name);
+                        div(class="cover") {
+                            img(src=format!("/cover/{}", &file.0.id), alt="cover", width="150", height="230", class= if file.2 { "cover_read" } else { "cover" } );
+                        }
+                        div(class="gallery_desc") {
+                            : format_args!("{}", file.0.name);
+                        }
                     }
-                    h4(style="text-align: center;") {
+                    div(class="flags") {
                         : if file.1 { "⭐" } else { "" };
                         : if file.2 { "✅" } else { "" };
                     }
@@ -241,7 +271,7 @@ pub fn library(
     render(body_content, None)
 }
 
-fn menu<'a>(user: User) -> Box<dyn horrorshow::RenderBox + 'a> {
+fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::RenderBox + 'a> {
     debug!("fn menu");
     // TODO print a pretty menu, 1 line...
     let menu_content = box_html! {
@@ -249,7 +279,14 @@ fn menu<'a>(user: User) -> Box<dyn horrorshow::RenderBox + 'a> {
             p {
                 a(href="/library") : "library" ;
                 : " | ";
+                a(href="/bookmarks") : "bookmarks" ;
+                : " | ";
                 a(href="/prefs") : "preferences" ;
+                // print admin link if Role is ok
+                @ if user.role == Role::Admin {
+                    : " | ";
+                    a(href="/admin") : "administration" ;
+                }
                 : " | ";
                 : format!("{}", user.name.as_str()) ;
                 : " (";
@@ -257,7 +294,11 @@ fn menu<'a>(user: User) -> Box<dyn horrorshow::RenderBox + 'a> {
                 : ")";
             }
             form(action="/search", method="post") {
-                input(type="text", placeholder="Search..", name="query") ;
+                @ if let Some(query) = &search_query {
+                    input(type="text", placeholder=query, name="query", value=query) ;
+                } else {
+                    input(type="text", placeholder="Search..", name="query") ;
+                }
             }
         }
     };
@@ -267,36 +308,11 @@ fn menu<'a>(user: User) -> Box<dyn horrorshow::RenderBox + 'a> {
 pub fn homepage(user: &User) -> String {
     debug!("fn homepage");
     // TODO moche (obligé le clone  ?)
-    let menu = menu(user.clone());
+    let menu = menu(user.to_owned(), None);
     let body_content = box_html! {
         : menu;
         div(id="home-content") {
         : "content"
-        }
-    };
-    render(body_content, None)
-}
-
-pub fn search_result(user: &User, files_list: Vec<FileInfo>) -> String {
-    debug!("fn homepage");
-    // TODO moche (obligé le clone  ?)
-    let menu = menu(user.clone());
-    let body_content = box_html! {
-        : menu;
-        div(id="results") {
-            @ for file in &files_list {
-                div(class="gallery", style="box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);") {
-                    a(href=format!("/infos/{}", &file.id)) {
-                        img(src=format!("/cover/{}", &file.id), alt="cover", width="150", height="230")
-                        : format_args!("{}", file.name);
-                    }
-                    // TODO as library display, need Vec<(FileInfo, bool, bool)>
-                    // h4(style="text-align: center;") {
-                    //     : if file.1 { "⭐" } else { "" };
-                    //     : if file.2 { "✅" } else { "" };
-                    // }
-                }
-            }
         }
     };
     render(body_content, None)
@@ -308,7 +324,7 @@ fn render(body_content: Box<dyn horrorshow::RenderBox>, redirect_url: Option<&st
     html {
         head { : header(redirect_url); }
         body(class="w3-theme-dark") {
-            h2(id="heading") { : "Welcome to Eloran" }
+            h2(id="heading") { : "Eloran" }
             : body_content
             }
         }

@@ -6,18 +6,19 @@ use image::imageops::FilterType;
 use image::DynamicImage;
 use jwalk::WalkDirGeneric;
 use pdf::object::*;
+use sqlx::pool::Pool;
 use sqlx::Sqlite;
-use sqlx::{pool::Pool, Row};
+use std::cmp::Ordering;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
-use ulid::Ulid;
 
 /// File struct, match database fields
 /// id|name|parent_path|read_status|scan_me|added_date|format|size|total_pages|current_page
-#[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq)]
+// #[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq, Eq)]
 pub struct FileInfo {
     pub id: String,
     pub name: String,
@@ -56,6 +57,16 @@ impl FileInfo {
         }
     }
 }
+impl PartialOrd for FileInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.name.partial_cmp(&other.name)
+    }
+}
+impl Ord for FileInfo {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.cmp(&other.name)
+    }
+}
 
 // sqlx::FromRow not compatible with enums, need an alternative
 // #[derive(Debug, Default, Clone, PartialEq)]
@@ -85,11 +96,22 @@ impl FileInfo {
 
 /// Directory struct, match database fields
 /// id|name|parent_path
-#[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq)]
+#[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq, Eq)]
 pub struct DirectoryInfo {
     pub id: String,
     pub name: String,
     pub parent_path: String,
+    pub file_number: Option<i32>,
+}
+impl PartialOrd for DirectoryInfo {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.name.partial_cmp(&other.name)
+    }
+}
+impl Ord for DirectoryInfo {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.name.cmp(&other.name)
+    }
 }
 
 /// try to extract a maximum of informations from the file and set default fields
@@ -141,224 +163,6 @@ fn extract_file_infos(entry: &Path) -> FileInfo {
         read_by: "".to_string(),
         bookmarked_by: "".to_string(),
     }
-}
-
-/// when a new file is found or uploaded, insert all values found
-/// return file id
-async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Pool<Sqlite>) {
-    // generate ulid if needed
-    let ulid = match ulid {
-        Some(ulid) => ulid.to_string(),
-        None => Ulid::new().to_string(),
-    };
-    file.id = ulid;
-    match sqlx::query(
-        "INSERT OR REPLACE INTO files(id, name, parent_path, size, added_date, scan_me, format, current_page, total_pages, read_by, bookmarked_by)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
-        .bind(&file.id)
-        .bind(&file.name)
-        .bind(&file.parent_path)
-        .bind(file.size)
-        .bind(file.added_date)
-        .bind(file.scan_me)
-        .bind(&file.format)
-        .bind(file.current_page)
-        .bind(file.total_pages)
-        .bind(&file.read_by)
-        .bind(&file.bookmarked_by)
-        .execute(conn).await {
-        Ok(_) => {
-            debug!("file insertion successfull")
-        }
-        Err(e) => error!("file insertion failed : {e}"),
-    };
-}
-
-/// delete a file in database
-async fn delete_file(file: &FileInfo, conn: &Pool<Sqlite>) {
-    match sqlx::query("DELETE FROM files WHERE name = ? AND parent_path = ?;")
-        .bind(&file.name)
-        .bind(&file.parent_path)
-        .execute(conn)
-        .await
-    {
-        Ok(_) => {
-            info!("file {}/{} deleted", file.name, file.parent_path)
-        }
-        Err(e) => error!("delete ko : {}", e),
-    }
-}
-
-/// get all file in a directory path from database
-async fn get_files_from_directory(
-    parent_path: &str,
-    directory_name: &str,
-    conn: &Pool<Sqlite>,
-) -> Vec<FileInfo> {
-    // WHY here we need to replace ' with '' in sqlite query ???
-    let files: Vec<FileInfo> = match sqlx::query_as(&format!(
-        "SELECT * FROM files WHERE parent_path = '{}/{}'",
-        parent_path.replace('\'', "''"),
-        directory_name.replace('\'', "''")
-    ))
-    .fetch_all(conn)
-    .await
-    {
-        Ok(file_found) => file_found,
-        Err(e) => {
-            error!("unable to retrieve file infos from database : {}", e);
-            let empty_list: Vec<FileInfo> = Vec::new();
-            empty_list
-        }
-    };
-    files
-}
-
-/// get all diretories in a path from database
-async fn get_registered_directories(conn: &Pool<Sqlite>) -> Vec<DirectoryInfo> {
-    let registered_directories: Vec<DirectoryInfo> =
-        match sqlx::query_as("SELECT * FROM directories ;")
-            .fetch_all(conn)
-            .await
-        {
-            Ok(file_found) => file_found,
-            Err(e) => {
-                error!("unable to retrieve directories from database : {}", e);
-                let empty_list: Vec<DirectoryInfo> = Vec::new();
-                empty_list
-            }
-        };
-    registered_directories
-}
-
-/// delete a directory in database
-async fn delete_directory(directory: &DirectoryInfo, conn: &Pool<Sqlite>) {
-    match sqlx::query(&format!(
-        "DELETE FROM directories WHERE name = '{}' AND parent_path = '{}';
-         DELETE FROM files WHERE parent_path = '{}/{}'",
-        directory.name, directory.parent_path, directory.parent_path, directory.name,
-    ))
-    .execute(conn)
-    .await
-    {
-        Ok(_) => {
-            info!(
-                "directory {}/{} deleted",
-                directory.name, directory.parent_path
-            )
-        }
-        Err(e) => error!("delete ko : {}", e),
-    }
-}
-
-/// return a directory if it exists in database
-async fn check_if_directory_exists(
-    parent_path: &str,
-    directory_name: &str,
-    conn: &Pool<Sqlite>,
-) -> Vec<DirectoryInfo> {
-    let directory_found: Vec<DirectoryInfo> =
-        match sqlx::query_as("SELECT * FROM directories WHERE name = ? AND parent_path = ?;")
-            .bind(directory_name)
-            .bind(parent_path)
-            .fetch_all(conn)
-            .await
-        {
-            Ok(dir_found) => dir_found,
-            Err(e) => {
-                error!("unable to check if directory exists in database : {}", e);
-                let empty_list: Vec<DirectoryInfo> = Vec::new();
-                empty_list
-            }
-        };
-    directory_found
-}
-
-/// return a file if it exists in database
-async fn check_if_file_exists(
-    parent_path: &str,
-    filename: &str,
-    conn: &Pool<Sqlite>,
-) -> Vec<FileInfo> {
-    let file_found: Vec<FileInfo> =
-        match sqlx::query_as("SELECT * FROM files WHERE name = ? AND parent_path = ?;")
-            .bind(filename)
-            .bind(parent_path)
-            .fetch_all(conn)
-            .await
-        {
-            Ok(file_found) => file_found,
-            Err(e) => {
-                error!("unable to check in file exists in database : {}", e);
-                let empty_list: Vec<FileInfo> = Vec::new();
-                empty_list
-            }
-        };
-    file_found
-}
-
-/// get last successfull scan date in EPOCH format from database
-async fn get_last_successfull_scan_date(conn: &Pool<Sqlite>) -> Duration {
-    let last_successfull_scan_date: i64 = match sqlx::query(
-        "SELECT last_successfull_scan_date FROM core WHERE id = 1",
-    )
-    .fetch_one(conn)
-    .await
-    {
-        Ok(epoch_date_row) => {
-            let epoch_date: i64 = epoch_date_row
-                .try_get("last_successfull_scan_date")
-                .unwrap();
-            // TODO pretty display of epoch time
-            info!("last successfull scan date : {}", &epoch_date);
-            epoch_date
-        }
-        Err(_) => {
-            warn!("could not found last successfull scan date, I will perform a full scan, be patient");
-            0
-        }
-    };
-    Duration::from_secs(u64::try_from(last_successfull_scan_date).unwrap())
-}
-
-/// update last successfull scan date in EPOCH format in database
-async fn update_last_successfull_scan_date(conn: &Pool<Sqlite>) {
-    // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
-    let now = SystemTime::now();
-    let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-    match sqlx::query("UPDATE core SET last_successfull_scan_date = ? WHERE id = 1;")
-        .bind(since_the_epoch.as_secs() as i64)
-        .execute(conn)
-        .await
-    {
-        Ok(_) => debug!("last_successfull_scan_date updated in database"),
-        Err(e) => debug!("last_successfull_scan_date update failed : {e}"),
-    };
-}
-
-/// when a new directory is found or uploaded, insert it
-async fn insert_new_dir(directory: &DirectoryInfo, ulid: Option<&str>, conn: &Pool<Sqlite>) {
-    // generate ulid if needed
-    let ulid = match ulid {
-        Some(ulid) => ulid.to_string(),
-        None => Ulid::new().to_string(),
-    };
-    // insert_query
-    match sqlx::query(
-        "INSERT OR REPLACE INTO directories(id, name, parent_path)
-                    VALUES(?, ?, ?);",
-    )
-    .bind(ulid)
-    .bind(&directory.name)
-    .bind(&directory.parent_path)
-    .execute(conn)
-    .await
-    {
-        Ok(_) => {
-            debug!("directory update successfull")
-        }
-        Err(e) => error!("directory infos insert failed : {e}"),
-    };
 }
 
 /// walk library dir and return list of files modified after the last successfull scan
@@ -438,7 +242,7 @@ fn walk_recent_files_and_insert(
                             .expect("runtime creation for insertions while scanning library");
                         rt.block_on(async move {
                             let conn = sqlite::create_sqlite_pool().await;
-                            let file_found = check_if_file_exists(
+                            let file_found = sqlite::check_if_file_exists(
                                 parent_path.as_str(),
                                 filename.as_str(),
                                 &conn,
@@ -447,12 +251,13 @@ fn walk_recent_files_and_insert(
                             if file_found.is_empty() {
                                 // new file
                                 info!("new file found : {}/{}", parent_path, filename);
-                                insert_new_file(&mut file_infos, None, &conn).await;
+                                sqlite::insert_new_file(&mut file_infos, None, &conn).await;
                             } else if file_found.len() == 1 {
                                 // 1 file found, ok update it
                                 info!("file modified : {}/{}", parent_path, filename);
                                 let ulid_found = &file_found[0].id;
-                                insert_new_file(&mut file_infos, Some(ulid_found), &conn).await;
+                                sqlite::insert_new_file(&mut file_infos, Some(ulid_found), &conn)
+                                    .await;
                             } else {
                                 // multiple id for a file ? wrong !!
                                 // TODO propose repair or full rescan
@@ -479,6 +284,59 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
     let conn = sqlite::create_sqlite_pool().await;
     loop {
         info!("start extraction");
+
+        // directories extract
+        // we want file number in each directory
+        let directories_to_scan_list: Vec<DirectoryInfo> =
+            match sqlx::query_as("SELECT * FROM directories;")
+                .fetch_all(&conn)
+                .await
+            {
+                Ok(directory) => directory,
+                Err(e) => {
+                    error!("unable to retrieve directory list to scan : {e}");
+                    let empty_list: Vec<DirectoryInfo> = Vec::new();
+                    empty_list
+                }
+            };
+        for directory in directories_to_scan_list {
+            let directory_full_path = &format!("{}/{}", directory.parent_path, directory.name);
+            // TODO comments
+            // see https://github.com/launchbadge/sqlx/issues/1066
+            let directory_file_number: (i32,) =
+                match sqlx::query_as("SELECT count(*) FROM files WHERE parent_path = ?;")
+                    .bind(directory_full_path)
+                    .fetch_one(&conn)
+                    .await
+                {
+                    Ok(file_number) => file_number,
+                    Err(e) => {
+                        error!(
+                            "unable to retrieve file number for directory {} : {e}",
+                            directory_full_path
+                        );
+                        (0,)
+                    }
+                };
+            // insert number
+            match sqlx::query("UPDATE directories SET file_number = ? WHERE id = ?;")
+                .bind(directory_file_number.0)
+                .bind(directory.id)
+                .execute(&conn)
+                .await
+            {
+                Ok(_) => debug!(
+                    "insert file number {} for directory {}",
+                    directory_file_number.0, directory_full_path
+                ),
+                Err(e) => error!(
+                    "unable to set file number for directory {} : {e}",
+                    directory_full_path
+                ),
+            }
+        }
+
+        // files extract
         // TODO set extraction limit in conf ? (extraction speed)
         let files_to_scan_list: Vec<FileInfo> =
             match sqlx::query_as("SELECT * FROM files WHERE scan_me = '1' LIMIT ?;")
@@ -488,7 +346,7 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
             {
                 Ok(file_found) => file_found,
                 Err(e) => {
-                    error!("unable to retrieve file list to scan : {}", e);
+                    error!("unable to retrieve file list to scan : {e}");
                     let empty_list: Vec<FileInfo> = Vec::new();
                     empty_list
                 }
@@ -529,7 +387,7 @@ pub async fn scan_routine(library_path: String, sleep_time: Duration) {
             );
 
             // retrieve last_successfull_scan_date, 0 if first time
-            let last_successfull_scan_date = get_last_successfull_scan_date(&conn).await;
+            let last_successfull_scan_date = sqlite::get_last_successfull_scan_date(&conn).await;
 
             // recent directories to find new and removed files
             let updated_dir_list = walk_recent_dir(library_path, last_successfull_scan_date);
@@ -541,13 +399,14 @@ pub async fn scan_routine(library_path: String, sleep_time: Duration) {
                         id: "666".to_string(),
                         name: entry.file_name.to_string_lossy().to_string(),
                         parent_path: entry.parent_path.to_string_lossy().to_string(),
+                        file_number: None,
                     };
                     info!(
                         "new changes in dir {}/{}, need to scan it",
                         current_directory.name, current_directory.parent_path,
                     );
                     // TODO use struct ....
-                    let directory_found = check_if_directory_exists(
+                    let directory_found = sqlite::check_if_directory_exists(
                         &current_directory.parent_path,
                         &current_directory.name,
                         &conn,
@@ -555,12 +414,12 @@ pub async fn scan_routine(library_path: String, sleep_time: Duration) {
                     .await;
                     // new directory
                     if directory_found.is_empty() && !current_directory.parent_path.is_empty() {
-                        insert_new_dir(&current_directory, None, &conn).await;
+                        sqlite::insert_new_dir(&current_directory, None, &conn).await;
                     }
 
                     // search for removed files
                     // retrieve file list in database for current directory
-                    let registered_files = get_files_from_directory(
+                    let registered_files = sqlite::get_files_from_directory(
                         &entry.parent_path.to_string_lossy(),
                         &entry.file_name.to_string_lossy(),
                         &conn,
@@ -571,14 +430,14 @@ pub async fn scan_routine(library_path: String, sleep_time: Duration) {
                         let full_path = format!("{}/{}", file.parent_path, file.name);
                         let file_path = Path::new(&full_path);
                         if !file_path.is_file() {
-                            delete_file(&file, &conn).await;
+                            sqlite::delete_file(&file, &conn).await;
                         }
                     }
                 }
             }
 
             // removed directory
-            let registered_directories = get_registered_directories(&conn).await;
+            let registered_directories = sqlite::get_registered_directories(&conn).await;
             // check if files exists for current directory, delete in database if not
             for directory in registered_directories {
                 let full_path = format!("{}/{}", directory.parent_path, directory.name);
@@ -588,7 +447,7 @@ pub async fn scan_routine(library_path: String, sleep_time: Duration) {
                         "directory {} not found but still present in database, deleting",
                         full_path
                     );
-                    delete_directory(&directory, &conn).await;
+                    sqlite::delete_directory(&directory, &conn).await;
                 }
             }
 
@@ -607,7 +466,7 @@ pub async fn scan_routine(library_path: String, sleep_time: Duration) {
             // end scanner, update date if successfull
             // TODO how to check if successfull ?
             // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
-            update_last_successfull_scan_date(&conn).await;
+            sqlite::update_last_successfull_scan_date(&conn).await;
         }
         // TODO true schedule, last scan status in db...
         debug!(
@@ -690,7 +549,7 @@ pub fn extract_pdf_cover(file: &FileInfo) -> Option<image::DynamicImage> {
             let data = match image?.raw_image_data(&doc) {
                 Ok(toot) => Some(toot.0),
                 Err(e) => {
-                    error!("unable to read raw image for file {} : {e}", &file.name);
+                    warn!("unable to read raw image for file {} : {e}", &file.name);
                     None
                 }
             };
@@ -708,7 +567,7 @@ pub fn extract_pdf_cover(file: &FileInfo) -> Option<image::DynamicImage> {
             None
         }
     } else {
-        error!("unable to load pdf file {}", &full_path);
+        warn!("unable to load pdf file {}", &full_path);
         None
     }
 }
@@ -794,7 +653,7 @@ pub fn extract_comic_image_list(archive: &File) -> Vec<String> {
         Ok(list) => list,
         Err(e) => {
             // 🔥🔥🔥 TODO 🔥🔥🔥 probably an encoding prb, error to warn (or info), and loop with ArchiveIterator...
-            error!("unable to extract file list form archive : {e}");
+            warn!("unable to extract file list form archive : {e}");
             Vec::default()
         }
     };
@@ -831,7 +690,7 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
         let image_path_in_achive = match comic_file_list.first() {
             Some(path) => path,
             None => {
-                error!("could not retrive cover in archive");
+                warn!("could not retrive cover in archive");
                 ""
             }
         };
@@ -842,7 +701,7 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
         match uncompress_archive_file(&compressed_comic_file, &mut vec_cover, image_path_in_achive)
         {
             Ok(_) => (),
-            Err(e) => error!(
+            Err(e) => warn!(
                 "unable to extract path '{}' from file '{}' : {e}",
                 image_path_in_achive, file.name
             ),
@@ -979,7 +838,7 @@ mod tests {
             bookmarked_by: "".to_string(),
         };
         let conn = sqlite::create_sqlite_pool().await;
-        insert_new_file(&mut skeletion_file, None, &conn).await;
+        sqlite::insert_new_file(&mut skeletion_file, None, &conn).await;
         let file_from_base: Vec<FileInfo> =
             match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
                 .bind(&skeletion_file.parent_path)

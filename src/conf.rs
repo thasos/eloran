@@ -1,5 +1,6 @@
 use clap::{arg, ArgAction, ArgMatches, Command};
 use config::Config;
+use std::env;
 
 pub struct Conf {
     pub bind: String,
@@ -17,16 +18,23 @@ pub fn init_conf() -> Conf {
     const CARGO_PKG_VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
     // parse args
     let clap_params = clap_args(CARGO_PKG_VERSION);
+    let mut logbuilder = env_logger::Builder::from_default_env();
+    logbuilder.target(env_logger::Target::Stdout);
     // debug mode
     if clap_params.get_flag("verbose") {
-        env_logger::builder()
-            .filter_level(log::LevelFilter::Debug)
-            .format_target(false)
-            .format_timestamp(None)
-            .init();
-    } else {
-        env_logger::init();
+        logbuilder.filter_level(log::LevelFilter::Debug);
+        if env::var("RUST_LOG").is_err() {
+            logbuilder.filter(Some("sqlx::"), log::LevelFilter::Off);
+        }
+    } else if env::var("RUST_LOG").is_err() {
+        logbuilder.filter_level(log::LevelFilter::Info);
+        logbuilder.filter(Some("sqlx::"), log::LevelFilter::Off);
     }
+    match logbuilder.try_init() {
+        Ok(_) => (),
+        Err(_) => eprintln!("unable to initiate pretty logging"),
+    };
+
     info!(
         "starting up version={}",
         CARGO_PKG_VERSION.unwrap_or("version not found")

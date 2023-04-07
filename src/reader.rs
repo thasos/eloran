@@ -15,11 +15,6 @@ use std::fs::File;
 // TODO load previous and next images for smoother experience ?
 pub async fn comics(file: &FileInfo, page: i32) -> String {
     info!("reading {}/{} (page {page})", file.parent_path, file.name);
-    // mark as read if last page
-    if page == file.total_pages {
-        println!("toto");
-    }
-
     let archive_path = &format!("{}/{}", file.parent_path, file.name);
     match File::open(archive_path) {
         Ok(compressed_comic_file) => {
@@ -40,7 +35,7 @@ pub async fn comics(file: &FileInfo, page: i32) -> String {
                 image_path_in_achive,
             ) {
                 Ok(_) => (),
-                Err(e) => error!(
+                Err(e) => warn!(
                     "unable to extract path '{}' from file '{}' : {e}",
                     image_path_in_achive, file.name
                 ),
@@ -58,7 +53,7 @@ pub async fn comics(file: &FileInfo, page: i32) -> String {
             }
         }
         Err(e) => {
-            error!("unable to read file {archive_path} : {e}");
+            warn!("unable to read file {archive_path} : {e}");
             String::new()
         }
     }
