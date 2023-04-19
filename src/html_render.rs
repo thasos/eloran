@@ -84,7 +84,7 @@ pub fn file_info(
                 : " | " ;
                 a(href=format!("/download/{}", file.id), class="navigation") : "⤵ download";
             }
-            h2 { a(href= up_link , class="navigation") : "↖️  up" }
+            h2 { a(href= up_link , class="navigation") : "↖️  up (not working yet)" }
             div(id="flags") {
                 a(href=format!("/toggle/bookmark/{}", file.id)) : "toggle bookmarks";
                 br;
@@ -223,10 +223,10 @@ pub fn library(list_to_display: LibraryDisplay) -> String {
         : menu;
         div(id="library-content") {
             // if we have a current_path, we can display some infos (unavailable in search)
-            @ if let Some(current_path) = list_to_display.current_path {
+            @ if let Some(current_path) = &list_to_display.current_path {
                 p {
                     // TODO split and add a direct link for each element in path
-                    : format!("disk path = {}{}", list_to_display.library_path, &current_path);
+                    : format!("list_to_display.library_path = {}, current_path = {}", list_to_display.library_path, &current_path);
                 }
                 h2 { a(href=format!("/library{}", &up_link), class="navigation") : "↖️  up" }
             }
@@ -235,7 +235,14 @@ pub fn library(list_to_display: LibraryDisplay) -> String {
             @ for directory in &list_to_display.directories_list.to_owned() {
                 div(class="gallery box_shadow container") {
                     // remove disk parent path for url construction
-                    a(href=format!("/library{}/{}", &directory.parent_path.replace(&list_to_display.library_path.to_owned(), ""), &directory.name)) {
+                    a(href= {
+                        // avoid double '/', I'm not proud of this...
+                        if directory.parent_path.is_empty() {
+                            format!("/library/{}", &directory.name)
+                        } else {
+                            format!("/library{}/{}", list_to_display.current_path.clone().unwrap_or("".to_string()), &directory.name)
+                        }
+                    }) {
                         div(class="cover") {
                             img(src="/images/folder.svgz", alt="folder", width="150", height="230");
                             @ if let Some(file_number) = directory.file_number{

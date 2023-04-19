@@ -65,7 +65,7 @@ pub async fn init_database() {
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY NOT NULL,
   password_hash TEXT NOT NULL,
-  name TEXT NOT NULL,
+  name TEXT NOT NULL UNIQUE,
   role TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS directories (
@@ -93,7 +93,8 @@ CREATE TABLE IF NOT EXISTS covers (
 );
 CREATE TABLE IF NOT EXISTS core (
   id INTEGER PRIMARY KEY NOT NULL,
-  library_path TEXT DEFAULT NULL,
+  name TEXT DEFAULT NULL UNIQUE,
+  library_path TEXT DEFAULT NULL UNIQUE,
   last_successfull_scan_date INTEGER NOT NULL DEFAULT 0,
   last_successfull_extract_date INTEGER NOT NULL DEFAULT 0
 );
@@ -106,10 +107,10 @@ CREATE TABLE IF NOT EXISTS core (
 }
 
 // TODO delete this when install page will be done
-pub async fn init_users(db_url: &str) {
-    let conn = SqlitePool::connect(db_url).await.unwrap();
+pub async fn init_default_users() {
+    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
     let schema = r#"
-INSERT INTO users(id, password_hash, name, role)
+INSERT OR IGNORE INTO users(id, password_hash, name, role)
 VALUES (1,'pass123','admin','Admin'),
        (2,'666','thas','User');
     "#;
@@ -120,49 +121,57 @@ VALUES (1,'pass123','admin','Admin'),
 }
 
 /// register the library path in database if needed
-pub async fn set_library_path(library_path: &Path, conn: &Pool<Sqlite>) {
-    let path_in_base = get_library_path(conn).await;
-    if path_in_base.is_empty() {
-        match sqlx::query("INSERT OR IGNORE INTO core(id, library_path) VALUES (1,?);")
-            .bind(library_path.to_string_lossy())
-            .execute(conn)
+pub async fn create_library_path(library_path: Vec<String>) {
+    for path in library_path {
+        debug!("set library path : {path}");
+        let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
+        // ignore UNIQUE constraint when insert here (or add a test "if exists" ?)
+        match sqlx::query("INSERT OR IGNORE INTO core(name, library_path) VALUES (?, ?);")
+            .bind(path.split('/').last())
+            .bind(&path)
+            .execute(&conn)
             .await
         {
-            Ok(_) => info!("library path successfully created"),
-            Err(e) => error!("failed to create library path : {}", e),
+            Ok(_) => info!("library path successfully created : {path}"),
+            Err(e) => error!("failed to create library path {path} : {}", e),
         }
-    } else if path_in_base != library_path.to_string_lossy() {
-        error!("library path changed ! I need to purge database and recreate it from scratch");
-        match sqlx::query("DELETE FROM core ; DELETE FROM files ; DELETE FROM directories ;")
-            .execute(conn)
-            .await
-        {
-            Ok(_) => info!("database successfully purged"),
-            Err(e) => error!("failed to purge database : {}", e),
-        }
-        init_database().await;
     }
 }
 
-/// retrieve the library path in database
-pub async fn get_library_path(conn: &Pool<Sqlite>) -> String {
-    match sqlx::query("SELECT library_path FROM core WHERE id = 1;")
-        .fetch_one(conn)
-        .await
+/// retrieve all the library path in database
+/// we can specify a name, in this case, return a Vec with one row
+pub async fn get_library_path(
+    name: Option<&str>,
+    conn: &Pool<Sqlite>,
+) -> Vec<(i64, String, String)> {
+    // add a WHERE condition when a name is given
+    let where_name = match name {
+        Some(name) => format!("WHERE name = '{}'", name),
+        None => "".to_string(),
+    };
+    match sqlx::query(&format!(
+        "SELECT id,name,library_path FROM core {};",
+        where_name
+    ))
+    .fetch_all(conn)
+    .await
     {
-        Ok(library_path) => {
-            let library_path: String = library_path.try_get("library_path").unwrap();
-            library_path
+        Ok(library_path_rows) => {
+            let lib_vec: Vec<(i64, String, String)> = library_path_rows
+                .iter()
+                .map(|row| (row.get("id"), row.get("name"), row.get("library_path")))
+                .collect();
+            lib_vec
         }
         Err(e) => {
             error!("failed to get library path : {}", e);
-            String::new()
+            Vec::with_capacity(0)
         }
     }
+    // TODO add a test : should return only 1 row when a name is given ?
 }
 
 /// get FileInfo from file path
-// path = `/fantasy/The Witcher/Sorceleur - L'Integrale - Andrzej Sapkowski.epub`
 pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileInfo {
     // separe parent_path and filename
     let mut path_elements: Vec<&str> = file_path.split('/').collect();
@@ -172,7 +181,8 @@ pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileI
     };
     // remove file name (after last '/')
     path_elements.pop();
-    let mut parent_path = get_library_path(conn).await;
+    let parent_path = get_library_path(None, conn).await;
+    let mut parent_path = parent_path.first().unwrap().1.to_owned();
     for element in path_elements {
         parent_path.push_str(element);
         parent_path.push('/');
@@ -463,7 +473,7 @@ pub async fn bookmarks_for_user_id(id: i64, conn: &Pool<Sqlite>) -> Vec<FileInfo
                 "unable to find bookmarked files in database for user id {}: {e}",
                 id
             );
-            Vec::default()
+            Vec::with_capacity(0)
         }
     };
     results
@@ -478,7 +488,7 @@ pub async fn search_file_from_string(search_query: &str, conn: &Pool<Sqlite>) ->
         Ok(files_list) => files_list,
         Err(e) => {
             error!("unable to search files in database : {e}");
-            Vec::default()
+            Vec::with_capacity(0)
         }
     };
     results
@@ -496,7 +506,7 @@ pub async fn search_directory_from_string(
         Ok(directories_list) => directories_list,
         Err(e) => {
             error!("unable to search directories in database : {e}");
-            Vec::default()
+            Vec::with_capacity(0)
         }
     };
     results
@@ -528,10 +538,11 @@ pub async fn get_files_from_directory(
 }
 
 /// get last successfull scan date in EPOCH format from database
-pub async fn get_last_successfull_scan_date(conn: &Pool<Sqlite>) -> Duration {
+pub async fn get_last_successfull_scan_date(library_path: i64, conn: &Pool<Sqlite>) -> Duration {
     let last_successfull_scan_date: i64 = match sqlx::query(
-        "SELECT last_successfull_scan_date FROM core WHERE id = 1",
+        "SELECT last_successfull_scan_date FROM core WHERE id = ?",
     )
+    .bind(library_path)
     .fetch_one(conn)
     .await
     {
@@ -576,9 +587,9 @@ pub async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Poo
         .bind(&file.bookmarked_by)
         .execute(conn).await {
         Ok(_) => {
-            debug!("file insertion successfull")
+            debug!("file insertion successfull ({}/{})", &file.parent_path, &file.id)
         }
-        Err(e) => error!("file insertion failed : {e}"),
+        Err(e) => error!("file insertion failed ({}/{}) : {e}", &file.parent_path, &file.id),
     };
 }
 
@@ -616,11 +627,13 @@ pub async fn get_registered_directories(conn: &Pool<Sqlite>) -> Vec<DirectoryInf
 
 /// delete a directory in database
 pub async fn delete_directory(directory: &DirectoryInfo, conn: &Pool<Sqlite>) {
-    match sqlx::query(&format!(
-        "DELETE FROM directories WHERE name = '{}' AND parent_path = '{}';
-         DELETE FROM files WHERE parent_path = '{}/{}'",
-        directory.name, directory.parent_path, directory.parent_path, directory.name,
-    ))
+    match sqlx::query(
+        "DELETE FROM directories WHERE name = ? AND parent_path = ?;
+         DELETE FROM files WHERE parent_path = ?;",
+    )
+    .bind(&directory.name)
+    .bind(&directory.parent_path)
+    .bind(format!("{}/{}", &directory.parent_path, &directory.name))
     .execute(conn)
     .await
     {
@@ -681,16 +694,22 @@ pub async fn check_if_file_exists(
 }
 
 /// update last successfull scan date in EPOCH format in database
-pub async fn update_last_successfull_scan_date(conn: &Pool<Sqlite>) {
+pub async fn update_last_successfull_scan_date(library_path: i64, conn: &Pool<Sqlite>) {
     // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-    match sqlx::query("UPDATE core SET last_successfull_scan_date = ? WHERE id = 1;")
+    match sqlx::query("UPDATE core SET last_successfull_scan_date = ? WHERE id = ?;")
         .bind(since_the_epoch.as_secs() as i64)
+        .bind(library_path)
         .execute(conn)
         .await
     {
-        Ok(_) => debug!("last_successfull_scan_date updated in database"),
+        Ok(_) => {
+            debug!(
+                "last_successfull_scan_date updated in database for library id {library_path} : {}",
+                since_the_epoch.as_secs()
+            )
+        }
         Err(e) => debug!("last_successfull_scan_date update failed : {e}"),
     };
 }

@@ -4,12 +4,11 @@ use std::env;
 
 pub struct Conf {
     pub bind: String,
-    pub library_path: String,
+    pub library_path: Option<Vec<String>>,
 }
 
 const DEFAULT_IP: &str = "0.0.0.0";
 const DEFAULT_PORT: &str = "3200";
-const DEFAULT_LIBRARY_PATH: &str = "library";
 const DEFAULT_CONFIG_FILE: &str = "settings.yaml";
 
 /// create configuration
@@ -24,10 +23,12 @@ pub fn init_conf() -> Conf {
     if clap_params.get_flag("verbose") {
         logbuilder.filter_level(log::LevelFilter::Debug);
         if env::var("RUST_LOG").is_err() {
+            // crates pdf and hypper are not too verbose
             logbuilder.filter(Some("sqlx::"), log::LevelFilter::Off);
         }
     } else if env::var("RUST_LOG").is_err() {
         logbuilder.filter_level(log::LevelFilter::Info);
+        // crates pdf and hypper are not too verbose
         logbuilder.filter(Some("sqlx::"), log::LevelFilter::Off);
     }
     match logbuilder.try_init() {
@@ -47,21 +48,41 @@ pub fn init_conf() -> Conf {
         .to_owned();
 
     // library_path
-    let mut library_path = clap_params
-        .get_one::<String>("library_path")
-        .expect("required")
-        .to_owned();
-    if library_path == DEFAULT_LIBRARY_PATH {
-        if let Ok(settings) = Config::builder()
-            .add_source(config::File::with_name(&config_file_path))
-            .add_source(config::Environment::with_prefix("ELORAN"))
-            .build()
-        {
-            library_path = settings.get_string("library_path").unwrap();
-        };
-    }
-    // delete last char if it's `/`
-    let library_path = library_path.trim_end_matches('/').to_string();
+    let library_path = match clap_params.get_many::<String>("library_path") {
+        Some(library_path_from_cmd) => Some(
+            library_path_from_cmd
+                .cloned()
+                .collect::<Vec<_>>()
+                // delete last char if it's `/`
+                .iter()
+                .map(|p| p.trim_end_matches('/').to_string())
+                .collect(),
+        ),
+        None => {
+            if let Ok(settings) = Config::builder()
+                .add_source(config::File::with_name(&config_file_path))
+                .build()
+            {
+                // TODO get_string to get_array
+                if let Ok(library_path_from_conf) = settings.get_array("library_path") {
+                    let toto: Vec<String> = library_path_from_conf
+                        .iter()
+                        .map(|v| v.to_string().trim_end_matches('/').to_string())
+                        .collect();
+                    // TODO do a trim_end_matches (see above)
+                    // delete last char if it's `/`
+                    // Some(vec![library_path_from_conf])
+                    Some(toto)
+                } else {
+                    warn!("unable to get library_path from command line");
+                    None
+                }
+            } else {
+                // no library path from command line or conf
+                None
+            }
+        }
+    };
 
     // bind ip
     let ip = clap_params
@@ -100,7 +121,8 @@ pub fn clap_args(_version: Option<&str>) -> ArgMatches {
         .arg(
             arg!(--library_path <VALUE>)
                 .short('l')
-                .default_value(DEFAULT_LIBRARY_PATH),
+                .num_args(1)
+                .action(ArgAction::Append),
         )
         .arg(
             arg!(--config <VALUE>)

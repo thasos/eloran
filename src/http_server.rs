@@ -17,6 +17,8 @@ use axum_login::{
     AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
 };
 use rand::Rng;
+use sqlx::Row;
+use std::collections::VecDeque;
 use std::fs;
 use std::io::Error;
 use tower::ServiceBuilder;
@@ -76,21 +78,23 @@ async fn bookmarks_handler(Extension(user): Extension<User>) -> impl IntoRespons
     files_results.sort();
     // add status (read, bookmark)
     let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
-    let mut files_results_with_status: Vec<(FileInfo, bool, bool)> = Vec::default();
+    let mut files_results_with_status: Vec<(FileInfo, bool, bool)> =
+        Vec::with_capacity(files_results.capacity());
     for file in files_results {
         let bookmark_status = sqlite::get_flag_status("bookmark", user_id, &file.id, &conn).await;
         let read_status = sqlite::get_flag_status("read_status", user_id, &file.id, &conn).await;
         files_results_with_status.push((file, bookmark_status, read_status));
     }
     // lib path
-    let library_path: String = sqlite::get_library_path(&conn).await;
+    let library_path = sqlite::get_library_path(None, &conn).await;
+    let library_path = library_path.first().unwrap().to_owned();
     conn.close().await;
     // response
     let list_to_display = html_render::LibraryDisplay {
         user: user.clone(),
-        directories_list: Vec::default(),
+        directories_list: Vec::with_capacity(0),
         files_list: files_results_with_status,
-        library_path,
+        library_path: library_path.2,
         current_path: None,
         search_query: None,
     };
@@ -108,7 +112,8 @@ async fn search_handler(Extension(user): Extension<User>, query: String) -> impl
     files_results.sort();
     // add status (read, bookmark)
     let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
-    let mut files_results_with_status: Vec<(FileInfo, bool, bool)> = Vec::default();
+    let mut files_results_with_status: Vec<(FileInfo, bool, bool)> =
+        Vec::with_capacity(files_results.capacity());
     for file in files_results {
         let bookmark_status = sqlite::get_flag_status("bookmark", user_id, &file.id, &conn).await;
         let read_status = sqlite::get_flag_status("read_status", user_id, &file.id, &conn).await;
@@ -118,14 +123,15 @@ async fn search_handler(Extension(user): Extension<User>, query: String) -> impl
     let mut directories_results = sqlite::search_directory_from_string(query, &conn).await;
     directories_results.sort();
     // lib path
-    let library_path: String = sqlite::get_library_path(&conn).await;
+    let library_path = sqlite::get_library_path(None, &conn).await;
+    let library_path = library_path.first().unwrap().to_owned();
     conn.close().await;
     // response
     let list_to_display = html_render::LibraryDisplay {
         user: user.clone(),
         directories_list: directories_results,
         files_list: files_results_with_status,
-        library_path,
+        library_path: library_path.2,
         current_path: None,
         search_query: Some(query.to_string()),
     };
@@ -186,8 +192,8 @@ async fn infos_handler(
     let conn = sqlite::create_sqlite_pool().await;
     let file = sqlite::get_files_from_id(&id, &conn).await;
     // path for up link
-    let library_path = sqlite::get_library_path(&conn).await;
-    let up_link = file.parent_path.replacen(&library_path, "/library", 1);
+    // 🔥🔥🔥 TODO fix link, need to link files table with core table, for library path 🔥🔥🔥
+    let up_link = format!("/library/{}", &file.parent_path);
     // total_page = 0, we need to scan it
     if file.scan_me == 1 {
         scanner::extract_all(&file, &conn).await;
@@ -344,7 +350,7 @@ async fn reader_handler(
                 )
                     .into_response(),
                 Err(e) => {
-                    error!(
+                    warn!(
                         "pdf file {}/{} not found : {e}",
                         &file.parent_path, &file.name
                     );
@@ -373,76 +379,140 @@ async fn library_handler(
     path: Option<Path<String>>,
 ) -> impl IntoResponse {
     let conn = sqlite::create_sqlite_pool().await;
-    let library_path: String = sqlite::get_library_path(&conn).await;
-    let path = match path {
+
+    let sub_path = match &path {
         Some(path) => format!("/{}", path.as_str()),
         None => String::new(),
     };
+    info!("get /library{} : {}", sub_path, user.name);
 
-    // we need user_id for bookmark and read status
-    let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
-
-    // TODO add bookmark and read status with get_bookmark_status()
-    let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = {
-        info!("get /library{} : {}", path, user.name);
-        // TODO set limit in conf
-        let files_list: Vec<FileInfo> = match sqlx::query_as(&format!(
-            "SELECT * FROM files WHERE parent_path = '{}{}' ORDER BY name",
-            library_path,
-            path.replace('\'', "''")
-        ))
-        .fetch_all(&conn)
-        .await
-        {
-            Ok(files_list) => files_list,
-            Err(e) => {
-                warn!("empty library : {}", e);
-                let empty_list: Vec<FileInfo> = Vec::new();
-                empty_list
+    let list_to_display = if sub_path.is_empty() {
+        // construct library list
+        let mut library_list: Vec<DirectoryInfo> = {
+            match sqlx::query("SELECT id,name,library_path FROM core;")
+                .fetch_all(&conn)
+                .await
+            {
+                Ok(library_list_rows) => {
+                    let mut library_list_vec: Vec<DirectoryInfo> =
+                        Vec::with_capacity(library_list_rows.capacity());
+                    for library in library_list_rows {
+                        let some_library_id: i64 = library.get("id");
+                        // let some_library_path: String = library.get("library_path");
+                        let some_library_name: String = library.get("name");
+                        let library_as_dir = DirectoryInfo {
+                            id: some_library_id.to_string(),
+                            name: some_library_name.trim_start_matches('/').to_string(),
+                            parent_path: "".to_string(),
+                            file_number: None,
+                        };
+                        library_list_vec.push(library_as_dir);
+                    }
+                    library_list_vec
+                }
+                Err(e) => {
+                    warn!("empty library : {}", e);
+                    let empty_list: Vec<DirectoryInfo> = Vec::new();
+                    empty_list
+                }
             }
         };
-        // add bookmark and read status to the list
-        let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = Vec::default();
-        for file in files_list {
-            let bookmark_status =
-                sqlite::get_flag_status("bookmark", user_id, &file.id, &conn).await;
-            let read_status =
-                sqlite::get_flag_status("read_status", user_id, &file.id, &conn).await;
-            files_list_with_status.push((file, bookmark_status, read_status));
+        library_list.sort();
+        html_render::LibraryDisplay {
+            user: user.clone(),
+            directories_list: library_list,
+            files_list: Vec::new(),
+            library_path: "/".to_string(),
+            current_path: Some(sub_path.clone()),
+            search_query: None,
         }
-        files_list_with_status
-    };
-    files_list_with_status.sort();
+    } else {
+        // retrieve library name from path begining
+        let (only_library_name, path_rest) = match &path {
+            Some(path) => {
+                // TODO rename vars
+                let tata = path.to_string();
+                let mut toto: VecDeque<&str> = tata.split('/').collect();
+                let library_name = toto[0].to_string();
+                toto.pop_front();
+                let end: String = toto.iter().map(|s| "/".to_string() + s).collect();
 
-    let mut directories_list: Vec<DirectoryInfo> = {
-        info!("get /library{} : {}", path, user.name);
-        // TODO set limit in conf
-        let directories_list: Vec<DirectoryInfo> = match sqlx::query_as(&format!(
-            "SELECT * FROM directories WHERE parent_path = '{}{}'",
-            library_path,
-            path.replace('\'', "''")
-        ))
-        .fetch_all(&conn)
-        .await
-        {
-            Ok(directories_list) => directories_list,
-            Err(e) => {
-                warn!("empty library : {}", e);
-                let empty_list: Vec<DirectoryInfo> = Vec::new();
-                empty_list
+                (library_name, end)
+            }
+            None => ("".to_string(), "".to_string()),
+        };
+        // retrieve true parent_path on disk from library name
+        let search_parent_path_vec =
+            sqlite::get_library_path(Some(&only_library_name), &conn).await;
+        let query_parent_path = match search_parent_path_vec.first() {
+            Some(path) => format!("{}{}", path.2.to_owned(), path_rest),
+            None => {
+                warn!("an empty library path should not happen, you must force a full rescan");
+                "".to_string()
             }
         };
-        directories_list
-    };
-    directories_list.sort();
-    conn.close().await;
-    let list_to_display = html_render::LibraryDisplay {
-        user: user.clone(),
-        directories_list,
-        files_list: files_list_with_status,
-        library_path,
-        current_path: Some(path),
-        search_query: None,
+
+        // we need user_id for bookmark and read status
+        let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
+
+        // construct lists
+        let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = {
+            // TODO set limit in conf
+            let files_list: Vec<FileInfo> =
+                match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
+                    .bind(&query_parent_path)
+                    .fetch_all(&conn)
+                    .await
+                {
+                    Ok(files_list) => files_list,
+                    Err(e) => {
+                        warn!("empty library : {}", e);
+                        let empty_list: Vec<FileInfo> = Vec::new();
+                        empty_list
+                    }
+                };
+            // add bookmark and read status to the list
+            let mut files_list_with_status: Vec<(FileInfo, bool, bool)> =
+                Vec::with_capacity(files_list.capacity());
+            for file in files_list {
+                let bookmark_status =
+                    sqlite::get_flag_status("bookmark", user_id, &file.id, &conn).await;
+                let read_status =
+                    sqlite::get_flag_status("read_status", user_id, &file.id, &conn).await;
+                files_list_with_status.push((file, bookmark_status, read_status));
+            }
+            files_list_with_status
+        };
+        files_list_with_status.sort();
+
+        let mut directories_list: Vec<DirectoryInfo> = {
+            info!("get /library{} : {}", sub_path, user.name);
+            // TODO set limit in conf
+            let directories_list: Vec<DirectoryInfo> =
+                match sqlx::query_as("SELECT * FROM directories WHERE parent_path = ?;")
+                    .bind(&query_parent_path)
+                    .fetch_all(&conn)
+                    .await
+                {
+                    Ok(directories_list) => directories_list,
+                    Err(e) => {
+                        warn!("empty library : {}", e);
+                        let empty_list: Vec<DirectoryInfo> = Vec::new();
+                        empty_list
+                    }
+                };
+            directories_list
+        };
+        directories_list.sort();
+        conn.close().await;
+        html_render::LibraryDisplay {
+            user: user.clone(),
+            directories_list,
+            files_list: files_list_with_status,
+            library_path: query_parent_path.to_string(),
+            current_path: Some(sub_path),
+            search_query: None,
+        }
     };
     Html(html_render::library(list_to_display))
 }
@@ -615,7 +685,7 @@ mod tests {
     async fn test_login_logout() {
         // init db
         sqlite::init_database().await;
-        sqlite::init_users(DB_URL).await;
+        sqlite::init_default_users().await;
         // headers
         let headers = "<!DOCTYPE html><html><head><title>Eloran</title><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width\">";
         let css = "<link rel=\"stylesheet\" href=\"/css/eloran.css\"><link rel=\"stylesheet\" href=\"/css/w3.css\"><link rel=\"stylesheet\" href=\"/css/w3-theme-dark-grey.css\">";

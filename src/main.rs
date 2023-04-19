@@ -23,14 +23,16 @@ async fn main() -> Result<(), Error> {
 
     // databases
     sqlite::init_database().await;
-    sqlite::init_users(DB_URL).await;
+    // TODO remove dbg users when install page is done
+    sqlite::init_default_users().await;
+    sqlite::create_library_path(conf.library_path.unwrap()).await;
 
     // start routines
     // scan the library files and add them in database
     tokio::spawn(async {
         info!("start scanner routine");
         let sleep_time = Duration::from_secs(60);
-        scanner::scan_routine(conf.library_path, sleep_time).await;
+        scanner::scan_routine(sleep_time).await;
     });
     // retrieve files list from database and extract covers and some metadatas
     tokio::spawn(async {

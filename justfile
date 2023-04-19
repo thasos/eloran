@@ -3,8 +3,7 @@ default:
     just --list --unsorted
 
 run:
-    RUST_LOG=debug \
-    cargo run
+    cargo run -- -v
 
 test:
     cargo test

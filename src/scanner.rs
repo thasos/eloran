@@ -167,12 +167,14 @@ fn extract_file_infos(entry: &Path) -> FileInfo {
 
 /// walk library dir and return list of files modified after the last successfull scan
 /// directory updated match new file, removed file
-fn walk_recent_dir(
+async fn walk_recent_dir(
     library_path: &Path,
     last_successfull_scan_date: Duration,
-) -> WalkDirGeneric<(usize, bool)> {
+    conn: &Pool<Sqlite>,
+) {
+    // ) -> WalkDirGeneric<(usize, bool)> {
     debug!("start walkdir for recent directories");
-    WalkDirGeneric::<(usize, bool)>::new(library_path)
+    let updated_dir_list = WalkDirGeneric::<(usize, bool)>::new(library_path)
         .skip_hidden(true)
         .process_read_dir(move |_depth, _path, _read_dir_state, children| {
             children.iter_mut().for_each(|dir_entry_result| {
@@ -197,17 +199,59 @@ fn walk_recent_dir(
                     }
                 }
             });
-        })
+        });
+
+    // loop on modified dirs
+    for entry in updated_dir_list.into_iter().flatten() {
+        if entry.client_state {
+            let current_directory = DirectoryInfo {
+                id: "666".to_string(),
+                name: entry.file_name.to_string_lossy().to_string(),
+                parent_path: entry.parent_path.to_string_lossy().to_string(),
+                file_number: None,
+            };
+            info!(
+                "new changes in dir {}/{}, need to scan it",
+                current_directory.parent_path, current_directory.name,
+            );
+            // TODO use struct ....
+            let directory_found = sqlite::check_if_directory_exists(
+                &current_directory.parent_path,
+                &current_directory.name,
+                conn,
+            )
+            .await;
+            // new directory
+            if directory_found.is_empty() && !current_directory.parent_path.is_empty() {
+                sqlite::insert_new_dir(&current_directory, None, conn).await;
+            }
+            // search for removed files
+            // retrieve file list in database for current directory
+            let registered_files = sqlite::get_files_from_directory(
+                &entry.parent_path.to_string_lossy(),
+                &entry.file_name.to_string_lossy(),
+                conn,
+            )
+            .await;
+            // check if files exists for current directory, delete in database if not
+            for file in registered_files {
+                let full_path = format!("{}/{}", file.parent_path, file.name);
+                let file_path = Path::new(&full_path);
+                if !file_path.is_file() {
+                    sqlite::delete_file(&file, conn).await;
+                }
+            }
+            // TODO insert file if not in DB ! -> replace walk_recent_files_and_insert fn ?
+        }
+    }
 }
 
 /// walk library dir and return list of files modified after the last successfull scan
 /// insert them in the process_read_dir fn of jwalk crate
-fn walk_recent_files_and_insert(
-    library_path: &Path,
-    last_successfull_scan_date: Duration,
-) -> WalkDirGeneric<(usize, bool)> {
+// TODO KO on files moved...
+fn walk_recent_files_and_insert(library_path: &Path, last_successfull_scan_date: Duration) {
     // recursive walk_dir
-    WalkDirGeneric::<(usize, bool)>::new(library_path)
+    let recent_file_list = WalkDirGeneric::<(usize, bool)>::new(library_path)
         .skip_hidden(true)
         .process_read_dir(move |_depth, _path, _read_dir_state, children| {
             children.iter_mut().for_each(|dir_entry_result| {
@@ -238,6 +282,7 @@ fn walk_recent_files_and_insert(
                         let parent_path = file_infos.parent_path.clone();
                         // create a new tokio runtime for inserts
                         // we need it to use async fns create_sqlite_pool and insert_new_file
+                        // TODO create one conn for each insert ? not sure if it's realy optimal...
                         let rt = Runtime::new()
                             .expect("runtime creation for insertions while scanning library");
                         rt.block_on(async move {
@@ -272,7 +317,16 @@ fn walk_recent_files_and_insert(
                     }
                 }
             });
-        })
+        });
+    for entry in recent_file_list.into_iter().flatten() {
+        if entry.client_state {
+            debug!(
+                "insert file {}/{}",
+                entry.parent_path.to_string_lossy(),
+                entry.file_name.to_string_lossy()
+            );
+        }
+    }
 }
 
 /// get files who need to be scanned (field `scan_me` in database) and extract some informations
@@ -367,107 +421,78 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
     }
 }
 
+async fn purge_removed_directories(conn: &Pool<Sqlite>) {
+    // removed directory
+    // TODO make a fn
+    let registered_directories = sqlite::get_registered_directories(conn).await;
+    // check if files exists for current directory, delete in database if not
+    for directory in registered_directories {
+        let full_path = format!("{}/{}", directory.parent_path, directory.name);
+        let directory_path = Path::new(&full_path);
+        if !directory_path.is_dir() {
+            info!(
+                "directory {} not found but still present in database, deleting",
+                full_path
+            );
+            sqlite::delete_directory(&directory, conn).await;
+        }
+    }
+}
+
 /// scan library path and add files in db
 // batch insert -> no speed improvement
 // TODO check total number file found, vs total in db (for insert errors) ?
-pub async fn scan_routine(library_path: String, sleep_time: Duration) {
-    let library_path = Path::new(&library_path);
+pub async fn scan_routine(sleep_time: Duration) {
     // register library_path in database if not present
     let conn = sqlite::create_sqlite_pool().await;
+    let library_path_vec = sqlite::get_library_path(None, &conn).await;
 
     // main loop
     loop {
-        sqlite::set_library_path(library_path, &conn).await;
-        if !library_path.is_dir() {
-            error!("{} does not exists", library_path.to_string_lossy());
-        } else {
-            debug!(
-                "path \"{}\" found and is a directory",
-                library_path.to_string_lossy()
-            );
+        // TODO multi lib first_scan_run
+        // let mut first_scan_run = true;
 
-            // retrieve last_successfull_scan_date, 0 if first time
-            let last_successfull_scan_date = sqlite::get_last_successfull_scan_date(&conn).await;
+        // library path loop
+        for library_path in library_path_vec.clone() {
+            let library_id = library_path.0;
+            let library_path = Path::new(&library_path.2);
 
-            // recent directories to find new and removed files
-            let updated_dir_list = walk_recent_dir(library_path, last_successfull_scan_date);
+            if !library_path.is_dir() {
+                error!("{} does not exists", library_path.to_string_lossy());
+            } else {
+                debug!(
+                    "path \"{}\" found and is a directory",
+                    library_path.to_string_lossy()
+                );
 
-            // loop on modified dirs
-            for entry in updated_dir_list.into_iter().flatten() {
-                if entry.client_state {
-                    let current_directory = DirectoryInfo {
-                        id: "666".to_string(),
-                        name: entry.file_name.to_string_lossy().to_string(),
-                        parent_path: entry.parent_path.to_string_lossy().to_string(),
-                        file_number: None,
-                    };
-                    info!(
-                        "new changes in dir {}/{}, need to scan it",
-                        current_directory.name, current_directory.parent_path,
-                    );
-                    // TODO use struct ....
-                    let directory_found = sqlite::check_if_directory_exists(
-                        &current_directory.parent_path,
-                        &current_directory.name,
-                        &conn,
-                    )
-                    .await;
-                    // new directory
-                    if directory_found.is_empty() && !current_directory.parent_path.is_empty() {
-                        sqlite::insert_new_dir(&current_directory, None, &conn).await;
-                    }
+                // retrieve last_successfull_scan_date, 0 if first run
+                // let last_successfull_scan_date = if first_scan_run {
+                //     first_scan_run = false;
+                //     Duration::from_secs(0)
+                // } else {
+                //     sqlite::get_last_successfull_scan_date(library_id, &conn).await
+                // };
+                let last_successfull_scan_date =
+                    sqlite::get_last_successfull_scan_date(library_id, &conn).await;
+                debug!("last_successfull_scan_date : {last_successfull_scan_date:?}");
 
-                    // search for removed files
-                    // retrieve file list in database for current directory
-                    let registered_files = sqlite::get_files_from_directory(
-                        &entry.parent_path.to_string_lossy(),
-                        &entry.file_name.to_string_lossy(),
-                        &conn,
-                    )
-                    .await;
-                    // check if files exists for current directory, delete in database if not
-                    for file in registered_files {
-                        let full_path = format!("{}/{}", file.parent_path, file.name);
-                        let file_path = Path::new(&full_path);
-                        if !file_path.is_file() {
-                            sqlite::delete_file(&file, &conn).await;
-                        }
-                    }
-                }
-            }
+                // recent directories to find new and removed files
+                walk_recent_dir(library_path, last_successfull_scan_date, &conn).await;
 
-            // removed directory
-            let registered_directories = sqlite::get_registered_directories(&conn).await;
-            // check if files exists for current directory, delete in database if not
-            for directory in registered_directories {
-                let full_path = format!("{}/{}", directory.parent_path, directory.name);
-                let directory_path = Path::new(&full_path);
-                if !directory_path.is_dir() {
-                    info!(
-                        "directory {} not found but still present in database, deleting",
-                        full_path
-                    );
-                    sqlite::delete_directory(&directory, &conn).await;
-                }
-            }
+                // removed directory
+                purge_removed_directories(&conn).await;
 
-            // recent files : added and modified files
-            let recent_file_list =
+                // recent files : added and modified files
+                // TODO this fn create a proper sql connexion, better this way ?
                 walk_recent_files_and_insert(library_path, last_successfull_scan_date);
-            for entry in recent_file_list.into_iter().flatten() {
-                if entry.client_state {
-                    debug!(
-                        "insert file {}/{}",
-                        entry.parent_path.to_string_lossy(),
-                        entry.file_name.to_string_lossy()
-                    );
-                }
+
+                // end scanner, update date if successfull
+                // TODO how to check if successfull ?
+                // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
+                sqlite::update_last_successfull_scan_date(library_id, &conn).await;
             }
-            // end scanner, update date if successfull
-            // TODO how to check if successfull ?
-            // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
-            sqlite::update_last_successfull_scan_date(&conn).await;
         }
+
         // TODO true schedule, last scan status in db...
         debug!(
             "stop scanning, sleeping for {} seconds",
@@ -640,7 +665,7 @@ pub fn extract_comic_image_list(archive: &File) -> Vec<String> {
     // let file_list = list_archive_files_with_encoding(archive, decode_sjis).expect("MYTEST");
     // use std::ffi::OsStr;
     // use std::os::unix::ffi::OsStrExt;
-    // let mut comic_file_list: Vec<String> = Vec::default();
+    // let mut comic_file_list: Vec<String> = Vec::new();
     // for file in file_list {
     //     let vecu8 = file.into_bytes();
     //     let os_str = OsStr::from_bytes(&vecu8[..]);
@@ -654,12 +679,12 @@ pub fn extract_comic_image_list(archive: &File) -> Vec<String> {
         Err(e) => {
             // 🔥🔥🔥 TODO 🔥🔥🔥 probably an encoding prb, error to warn (or info), and loop with ArchiveIterator...
             warn!("unable to extract file list form archive : {e}");
-            Vec::default()
+            Vec::with_capacity(0)
         }
     };
     // TODO use drain_filter when it will be stable
     // see https://github.com/rust-lang/rust/issues/43244
-    let mut image_list = Vec::default();
+    let mut image_list = Vec::with_capacity(comic_file_list.capacity());
     for file_path in comic_file_list.into_iter() {
         if file_path.to_lowercase().contains(".jpg")
             || file_path.to_lowercase().contains(".jpeg")
@@ -695,7 +720,7 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
             }
         };
         // uncompress corresponding image
-        let mut vec_cover: Vec<u8> = Vec::default();
+        let mut vec_cover: Vec<u8> = Vec::new();
         // RAR need to reopen file... why ? and why rar only ?
         let compressed_comic_file = File::open(archive_path).expect("file open");
         match uncompress_archive_file(&compressed_comic_file, &mut vec_cover, image_path_in_achive)
