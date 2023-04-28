@@ -15,6 +15,27 @@ use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
 
+/// Library Struct
+#[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq, Eq)]
+pub struct Library {
+    pub id: i64,
+    pub name: String,
+    pub path: String,
+    pub last_successfull_scan_date: i64,
+    pub last_successfull_extract_date: i64,
+}
+impl Library {
+    pub fn new() -> Library {
+        Library {
+            id: 0,
+            name: "".to_string(),
+            path: "".to_string(),
+            last_successfull_scan_date: 0,
+            last_successfull_extract_date: 0,
+        }
+    }
+}
+
 /// File struct, match database fields
 /// id|name|parent_path|read_status|scan_me|added_date|format|size|total_pages|current_page
 // #[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq, Eq, PartialOrd, Ord)]
@@ -22,6 +43,7 @@ use tokio::runtime::Runtime;
 pub struct FileInfo {
     pub id: String,
     pub name: String,
+    pub library_name: String,
     pub parent_path: String,
     // no bool in sqlite :( , `stored as integers 0 (false) and 1 (true)`
     // see https://www.sqlite.org/datatype3.html
@@ -44,6 +66,7 @@ impl FileInfo {
             // TODO default id ? 🤮
             id: "666".to_string(),
             name: "".to_string(),
+            library_name: "".to_string(),
             parent_path: "".to_string(),
             added_date: 0,
             scan_me: 1,
@@ -115,7 +138,7 @@ impl Ord for DirectoryInfo {
 }
 
 /// try to extract a maximum of informations from the file and set default fields
-fn extract_file_infos(entry: &Path) -> FileInfo {
+fn extract_file_infos(library_name: &str, entry: &Path) -> FileInfo {
     // filename
     let filename = match entry.file_name() {
         Some(name) => name.to_str().unwrap(),
@@ -153,6 +176,7 @@ fn extract_file_infos(entry: &Path) -> FileInfo {
         // TODO default id ? 🤮
         id: "666".to_string(),
         name: filename,
+        library_name: library_name.to_string(),
         parent_path,
         added_date: since_the_epoch.as_secs() as i64,
         scan_me: 1,
@@ -249,7 +273,8 @@ async fn walk_recent_dir(
 /// walk library dir and return list of files modified after the last successfull scan
 /// insert them in the process_read_dir fn of jwalk crate
 // TODO KO on files moved...
-fn walk_recent_files_and_insert(library_path: &Path, last_successfull_scan_date: Duration) {
+fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Duration) {
+    let library_path = Path::new(&library.path);
     // recursive walk_dir
     let recent_file_list = WalkDirGeneric::<(usize, bool)>::new(library_path)
         .skip_hidden(true)
@@ -277,7 +302,8 @@ fn walk_recent_files_and_insert(library_path: &Path, last_successfull_scan_date:
                         );
                         // insert here to benefit the jwalk parallelism
                         // file_infos need to be mutable for ulid genereation
-                        let mut file_infos = extract_file_infos(dir_entry.path().as_path());
+                        let mut file_infos =
+                            extract_file_infos(&library.name, dir_entry.path().as_path());
                         let filename = file_infos.name.clone();
                         let parent_path = file_infos.parent_path.clone();
                         // create a new tokio runtime for inserts
@@ -445,7 +471,7 @@ async fn purge_removed_directories(conn: &Pool<Sqlite>) {
 pub async fn scan_routine(sleep_time: Duration) {
     // register library_path in database if not present
     let conn = sqlite::create_sqlite_pool().await;
-    let library_path_vec = sqlite::get_library_path(None, &conn).await;
+    let library_vec = sqlite::get_library(None, &conn).await;
 
     // main loop
     loop {
@@ -453,9 +479,8 @@ pub async fn scan_routine(sleep_time: Duration) {
         // let mut first_scan_run = true;
 
         // library path loop
-        for library_path in library_path_vec.clone() {
-            let library_id = library_path.0;
-            let library_path = Path::new(&library_path.2);
+        for library in library_vec.clone() {
+            let library_path = Path::new(&library.path);
 
             if !library_path.is_dir() {
                 error!("{} does not exists", library_path.to_string_lossy());
@@ -473,7 +498,7 @@ pub async fn scan_routine(sleep_time: Duration) {
                 //     sqlite::get_last_successfull_scan_date(library_id, &conn).await
                 // };
                 let last_successfull_scan_date =
-                    sqlite::get_last_successfull_scan_date(library_id, &conn).await;
+                    sqlite::get_last_successfull_scan_date(library.id, &conn).await;
                 debug!("last_successfull_scan_date : {last_successfull_scan_date:?}");
 
                 // recent directories to find new and removed files
@@ -484,12 +509,12 @@ pub async fn scan_routine(sleep_time: Duration) {
 
                 // recent files : added and modified files
                 // TODO this fn create a proper sql connexion, better this way ?
-                walk_recent_files_and_insert(library_path, last_successfull_scan_date);
+                walk_recent_files_and_insert(library.clone(), last_successfull_scan_date);
 
                 // end scanner, update date if successfull
                 // TODO how to check if successfull ?
                 // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
-                sqlite::update_last_successfull_scan_date(library_id, &conn).await;
+                sqlite::update_last_successfull_scan_date(&library.id, &conn).await;
             }
         }
 
@@ -562,6 +587,7 @@ pub fn extract_pdf_cover(file: &FileInfo) -> Option<image::DynamicImage> {
                 resources
                     .xobjects
                     .iter()
+                    // TODO fix panic here : true render ?
                     .map(|(_name, &ressource)| doc.get(ressource).unwrap())
                     .filter(|o| matches!(**o, XObject::Image(_))),
             );

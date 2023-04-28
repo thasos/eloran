@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS directories (
 CREATE TABLE IF NOT EXISTS files (
   id ULID PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
+  library_name TEXT NOT NULL,
   parent_path TEXT NOT NULL,
   scan_me BOOLEAN DEFAULT TRUE,
   added_date INTEGER NOT NULL,
@@ -94,7 +95,7 @@ CREATE TABLE IF NOT EXISTS covers (
 CREATE TABLE IF NOT EXISTS core (
   id INTEGER PRIMARY KEY NOT NULL,
   name TEXT DEFAULT NULL UNIQUE,
-  library_path TEXT DEFAULT NULL UNIQUE,
+  path TEXT DEFAULT NULL UNIQUE,
   last_successfull_scan_date INTEGER NOT NULL DEFAULT 0,
   last_successfull_extract_date INTEGER NOT NULL DEFAULT 0
 );
@@ -121,14 +122,22 @@ VALUES (1,'pass123','admin','Admin'),
 }
 
 /// register the library path in database if needed
+use crate::scanner::Library;
 pub async fn create_library_path(library_path: Vec<String>) {
     for path in library_path {
+        let library = Library {
+            id: 0,
+            name: path.split('/').last().unwrap().to_string(),
+            path: path.to_string(),
+            last_successfull_scan_date: 0,
+            last_successfull_extract_date: 0,
+        };
         debug!("set library path : {path}");
         let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
         // ignore UNIQUE constraint when insert here (or add a test "if exists" ?)
-        match sqlx::query("INSERT OR IGNORE INTO core(name, library_path) VALUES (?, ?);")
-            .bind(path.split('/').last())
-            .bind(&path)
+        match sqlx::query("INSERT OR IGNORE INTO core(name, path) VALUES (?, ?);")
+            .bind(library.name)
+            .bind(library.path)
             .execute(&conn)
             .await
         {
@@ -140,29 +149,17 @@ pub async fn create_library_path(library_path: Vec<String>) {
 
 /// retrieve all the library path in database
 /// we can specify a name, in this case, return a Vec with one row
-pub async fn get_library_path(
-    name: Option<&str>,
-    conn: &Pool<Sqlite>,
-) -> Vec<(i64, String, String)> {
+pub async fn get_library(name: Option<&str>, conn: &Pool<Sqlite>) -> Vec<Library> {
     // add a WHERE condition when a name is given
     let where_name = match name {
         Some(name) => format!("WHERE name = '{}'", name),
         None => "".to_string(),
     };
-    match sqlx::query(&format!(
-        "SELECT id,name,library_path FROM core {};",
-        where_name
-    ))
-    .fetch_all(conn)
-    .await
+    match sqlx::query_as(&format!("SELECT * FROM core {};", where_name))
+        .fetch_all(conn)
+        .await
     {
-        Ok(library_path_rows) => {
-            let lib_vec: Vec<(i64, String, String)> = library_path_rows
-                .iter()
-                .map(|row| (row.get("id"), row.get("name"), row.get("library_path")))
-                .collect();
-            lib_vec
-        }
+        Ok(library_path_rows) => library_path_rows,
         Err(e) => {
             error!("failed to get library path : {}", e);
             Vec::with_capacity(0)
@@ -181,8 +178,8 @@ pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileI
     };
     // remove file name (after last '/')
     path_elements.pop();
-    let parent_path = get_library_path(None, conn).await;
-    let mut parent_path = parent_path.first().unwrap().1.to_owned();
+    let parent_path = get_library(None, conn).await;
+    let mut parent_path = parent_path.first().unwrap().name.to_owned();
     for element in path_elements {
         parent_path.push_str(element);
         parent_path.push('/');
@@ -572,10 +569,11 @@ pub async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Poo
     };
     file.id = ulid;
     match sqlx::query(
-        "INSERT OR REPLACE INTO files(id, name, parent_path, size, added_date, scan_me, format, current_page, total_pages, read_by, bookmarked_by)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
+        "INSERT OR REPLACE INTO files(id, name, library_name, parent_path, size, added_date, scan_me, format, current_page, total_pages, read_by, bookmarked_by)
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
         .bind(&file.id)
         .bind(&file.name)
+        .bind(&file.library_name)
         .bind(&file.parent_path)
         .bind(file.size)
         .bind(file.added_date)
@@ -694,7 +692,7 @@ pub async fn check_if_file_exists(
 }
 
 /// update last successfull scan date in EPOCH format in database
-pub async fn update_last_successfull_scan_date(library_path: i64, conn: &Pool<Sqlite>) {
+pub async fn update_last_successfull_scan_date(library_path: &i64, conn: &Pool<Sqlite>) {
     // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");

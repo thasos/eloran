@@ -1,6 +1,6 @@
 use crate::html_render::{self, login_ok};
 use crate::reader;
-use crate::scanner::{self, DirectoryInfo, FileInfo};
+use crate::scanner::{self, DirectoryInfo, FileInfo, Library};
 use crate::sqlite;
 
 use axum::http::header;
@@ -17,7 +17,6 @@ use axum_login::{
     AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
 };
 use rand::Rng;
-use sqlx::Row;
 use std::collections::VecDeque;
 use std::fs;
 use std::io::Error;
@@ -86,7 +85,7 @@ async fn bookmarks_handler(Extension(user): Extension<User>) -> impl IntoRespons
         files_results_with_status.push((file, bookmark_status, read_status));
     }
     // lib path
-    let library_path = sqlite::get_library_path(None, &conn).await;
+    let library_path = sqlite::get_library(None, &conn).await;
     let library_path = library_path.first().unwrap().to_owned();
     conn.close().await;
     // response
@@ -94,7 +93,7 @@ async fn bookmarks_handler(Extension(user): Extension<User>) -> impl IntoRespons
         user: user.clone(),
         directories_list: Vec::with_capacity(0),
         files_list: files_results_with_status,
-        library_path: library_path.2,
+        library_path: library_path.path,
         current_path: None,
         search_query: None,
     };
@@ -123,7 +122,7 @@ async fn search_handler(Extension(user): Extension<User>, query: String) -> impl
     let mut directories_results = sqlite::search_directory_from_string(query, &conn).await;
     directories_results.sort();
     // lib path
-    let library_path = sqlite::get_library_path(None, &conn).await;
+    let library_path = sqlite::get_library(None, &conn).await;
     let library_path = library_path.first().unwrap().to_owned();
     conn.close().await;
     // response
@@ -131,7 +130,7 @@ async fn search_handler(Extension(user): Extension<User>, query: String) -> impl
         user: user.clone(),
         directories_list: directories_results,
         files_list: files_results_with_status,
-        library_path: library_path.2,
+        library_path: library_path.path,
         current_path: None,
         search_query: Some(query.to_string()),
     };
@@ -192,9 +191,17 @@ async fn infos_handler(
     let conn = sqlite::create_sqlite_pool().await;
     let file = sqlite::get_files_from_id(&id, &conn).await;
     // path for up link
-    // 🔥🔥🔥 TODO fix link, need to link files table with core table, for library path 🔥🔥🔥
-    let up_link = format!("/library/{}", &file.parent_path);
-    // total_page = 0, we need to scan it
+    let library_name = &file.library_name;
+    let library_vec = sqlite::get_library(Some(library_name), &conn).await;
+    let library = if let Some(first_library) = library_vec.first() {
+        first_library.to_owned()
+    } else {
+        Library::new()
+    };
+    let library_path = &library.path;
+    let up_link = file
+        .parent_path
+        .replace(library_path, &format!("/library/{library_name}"));
     if file.scan_me == 1 {
         scanner::extract_all(&file, &conn).await;
     }
@@ -388,39 +395,31 @@ async fn library_handler(
 
     let list_to_display = if sub_path.is_empty() {
         // construct library list
-        let mut library_list: Vec<DirectoryInfo> = {
-            match sqlx::query("SELECT id,name,library_path FROM core;")
-                .fetch_all(&conn)
-                .await
-            {
-                Ok(library_list_rows) => {
-                    let mut library_list_vec: Vec<DirectoryInfo> =
-                        Vec::with_capacity(library_list_rows.capacity());
-                    for library in library_list_rows {
-                        let some_library_id: i64 = library.get("id");
-                        // let some_library_path: String = library.get("library_path");
-                        let some_library_name: String = library.get("name");
-                        let library_as_dir = DirectoryInfo {
-                            id: some_library_id.to_string(),
-                            name: some_library_name.trim_start_matches('/').to_string(),
-                            parent_path: "".to_string(),
-                            file_number: None,
-                        };
-                        library_list_vec.push(library_as_dir);
-                    }
-                    library_list_vec
-                }
+        let library_list: Vec<Library> = {
+            match sqlx::query_as("SELECT * FROM core;").fetch_all(&conn).await {
+                Ok(library_list_rows) => library_list_rows,
                 Err(e) => {
                     warn!("empty library : {}", e);
-                    let empty_list: Vec<DirectoryInfo> = Vec::new();
-                    empty_list
+                    Vec::new()
                 }
             }
         };
-        library_list.sort();
+
+        let mut library_as_directories_list: Vec<DirectoryInfo> = Vec::new();
+        for library in library_list {
+            let library_as_dir = DirectoryInfo {
+                id: library.id.to_string(),
+                name: library.name.trim_start_matches('/').to_string(),
+                parent_path: "".to_string(),
+                file_number: None,
+            };
+            library_as_directories_list.push(library_as_dir);
+        }
+
+        library_as_directories_list.sort();
         html_render::LibraryDisplay {
             user: user.clone(),
-            directories_list: library_list,
+            directories_list: library_as_directories_list,
             files_list: Vec::new(),
             library_path: "/".to_string(),
             current_path: Some(sub_path.clone()),
@@ -442,10 +441,9 @@ async fn library_handler(
             None => ("".to_string(), "".to_string()),
         };
         // retrieve true parent_path on disk from library name
-        let search_parent_path_vec =
-            sqlite::get_library_path(Some(&only_library_name), &conn).await;
+        let search_parent_path_vec = sqlite::get_library(Some(&only_library_name), &conn).await;
         let query_parent_path = match search_parent_path_vec.first() {
-            Some(path) => format!("{}{}", path.2.to_owned(), path_rest),
+            Some(path) => format!("{}{}", path.path.to_owned(), path_rest),
             None => {
                 warn!("an empty library path should not happen, you must force a full rescan");
                 "".to_string()
