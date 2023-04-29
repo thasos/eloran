@@ -562,16 +562,11 @@ pub async fn extract_all(file: &FileInfo, conn: &Pool<Sqlite>) {
 pub async fn extract_pdf_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
     let full_path = format!("file://{}/{}", file.parent_path, file.name);
     let mut total_pages = 0;
+    // no await in this scope, cause error trait `Handler<_, _, _>` is not implemented
+    // use macro #[axum::debug_handler] on handler to see details
     if let Ok(pdf_document) = Document::from_file(&full_path, None) {
         total_pages = pdf_document.n_pages();
     };
-
-    // // no await in this scope, cause error trait `Handler<_, _, _>` is not implemented
-    // // use macro #[axum::debug_handler] on handler to see details
-    // if let Ok(doc) = pdf::file::File::open(&full_path) {
-    //     total_pages = doc.num_pages();
-    // };
-
     sqlite::insert_total_pages(file, total_pages, conn).await;
 }
 

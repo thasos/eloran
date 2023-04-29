@@ -21,36 +21,40 @@ pub async fn comics(file: &FileInfo, page: i32) -> String {
             // get images list from archive
             let comic_file_list = scanner::extract_comic_image_list(&compressed_comic_file);
             // set path file wanted from page index
-            let image_path_in_achive = comic_file_list
-                .get(page as usize)
-                // TODO FIXME
-                .expect("get file path from file list at");
-            // uncompress corresponding image
-            let mut vec_comic_page: Vec<u8> = Vec::default();
+            if !comic_file_list.is_empty() {
+                let image_path_in_achive = comic_file_list
+                    .get(page as usize)
+                    // TODO FIXME
+                    .expect("get file path from file list at");
+                // uncompress corresponding image
+                let mut vec_comic_page: Vec<u8> = Vec::default();
 
-            // RAR need to reopen file... why ? and why rar only ?
-            let compressed_comic_file = File::open(archive_path).expect("file open");
-            match uncompress_archive_file(
-                &compressed_comic_file,
-                &mut vec_comic_page,
-                image_path_in_achive,
-            ) {
-                Ok(_) => (),
-                Err(e) => warn!(
-                    "unable to extract path '{}' from file '{}' : {e}",
-                    image_path_in_achive, file.name
-                ),
-            }
-            // return img in base64
-            match image::load_from_memory(&vec_comic_page) {
-                Ok(img) => {
-                    format!(
-                        // TODO create a `page` router to render directly without base64
-                        "<img src=\"data:image/jpeg;base64,{}\" class=\"responsive\")",
-                        sqlite::image_to_base64(&img)
-                    )
+                // RAR need to reopen file... why ? and why rar only ?
+                let compressed_comic_file = File::open(archive_path).expect("file open");
+                match uncompress_archive_file(
+                    &compressed_comic_file,
+                    &mut vec_comic_page,
+                    image_path_in_achive,
+                ) {
+                    Ok(_) => (),
+                    Err(e) => warn!(
+                        "unable to extract path '{}' from file '{}' : {e}",
+                        image_path_in_achive, file.name
+                    ),
                 }
-                Err(_) => "error comic".to_string(),
+                // return img in base64
+                match image::load_from_memory(&vec_comic_page) {
+                    Ok(img) => {
+                        format!(
+                            // TODO create a `page` router to render directly without base64
+                            "<img src=\"data:image/jpeg;base64,{}\" class=\"responsive\")",
+                            sqlite::image_to_base64(&img)
+                        )
+                    }
+                    Err(_) => "error comic".to_string(),
+                }
+            } else {
+                "unable to extract images list".to_string()
             }
         }
         Err(e) => {
