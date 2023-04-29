@@ -84,7 +84,7 @@ pub fn file_info(
                 : " | " ;
                 a(href=format!("/download/{}", file.id), class="navigation") : "⤵ download";
             }
-            h2 { a(href= up_link , class="navigation") : "↖️  up (not working yet)" }
+            h2 { a(href= up_link , class="navigation") : "↖️  up" }
             div(id="flags") {
                 a(href=format!("/toggle/bookmark/{}", file.id)) : "toggle bookmarks";
                 br;

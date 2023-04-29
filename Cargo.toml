@@ -20,11 +20,12 @@ epub = "2.0.0"
 # TODO remove b64
 base64 = "0.21.0"
 compress-tools = "0.14.0"
-pdf = "0.8.0"
 libc = "0.2.140"
 # clap = { version = "4.1.13", default-features = false, features = ["std"] }
 clap = "4.1.13"
 config = "0.13.3"
+poppler-rs = "0.21.0"
+cairo-rs = { version = "0.17.0", features = ["png", "pdf"] }
 [dependencies.axum-login]
 version = "0.4"
 features = ["sqlite"]

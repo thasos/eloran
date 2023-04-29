@@ -1,11 +1,12 @@
 use crate::sqlite;
 
+use cairo::Context;
 use compress_tools::*;
 use epub::doc::EpubDoc;
 use image::imageops::FilterType;
 use image::DynamicImage;
 use jwalk::WalkDirGeneric;
-use pdf::object::*;
+use poppler::Document;
 use sqlx::pool::Pool;
 use sqlx::Sqlite;
 use std::cmp::Ordering;
@@ -559,68 +560,50 @@ pub async fn extract_all(file: &FileInfo, conn: &Pool<Sqlite>) {
 }
 
 pub async fn extract_pdf_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
-    let full_path = format!("{}/{}", file.parent_path, file.name);
+    let full_path = format!("file://{}/{}", file.parent_path, file.name);
     let mut total_pages = 0;
-
-    // no await in this scope, cause error trait `Handler<_, _, _>` is not implemented
-    // use macro #[axum::debug_handler] on handler to see details
-    if let Ok(doc) = pdf::file::File::open(&full_path) {
-        total_pages = doc.num_pages();
+    if let Ok(pdf_document) = Document::from_file(&full_path, None) {
+        total_pages = pdf_document.n_pages();
     };
 
-    sqlite::insert_total_pages(file, total_pages as i32, conn).await;
+    // // no await in this scope, cause error trait `Handler<_, _, _>` is not implemented
+    // // use macro #[axum::debug_handler] on handler to see details
+    // if let Ok(doc) = pdf::file::File::open(&full_path) {
+    //     total_pages = doc.num_pages();
+    // };
+
+    sqlite::insert_total_pages(file, total_pages, conn).await;
 }
 
 // TODO error/warn message for each `None` in arms
 // ⚠️  "the image crate is known to be quite slow when compiled in debug mode"
 // from https://www.reddit.com/r/rust/comments/k1wjix/why_opening_of_images_is_so_slow/
 pub fn extract_pdf_cover(file: &FileInfo) -> Option<image::DynamicImage> {
-    let full_path = format!("{}/{}", file.parent_path, file.name);
-    let mut cover: Option<image::DynamicImage> = None;
-
-    if let Ok(doc) = pdf::file::File::open(&full_path) {
-        if let Ok(page) = doc.get_page(0) {
-            let resources = page.resources().unwrap();
-
-            let mut cover_images: Vec<RcRef<XObject>> = vec![];
-            cover_images.extend(
-                resources
-                    .xobjects
-                    .iter()
-                    // TODO fix panic here : true render ?
-                    .map(|(_name, &ressource)| doc.get(ressource).unwrap())
-                    .filter(|o| matches!(**o, XObject::Image(_))),
-            );
-
-            let first_object = cover_images.first()?;
-            let image = match **first_object {
-                XObject::Image(ref im) => Some(im),
-                _ => None,
-            };
-            let data = match image?.raw_image_data(&doc) {
-                Ok(toot) => Some(toot.0),
-                Err(e) => {
-                    warn!("unable to read raw image for file {} : {e}", &file.name);
-                    None
-                }
-            };
-            let vec_cover = data?.to_vec();
-
-            // resize and insert
-            match image::load_from_memory(&vec_cover) {
-                Ok(img) => cover = Some(resize_cover(img)),
-                Err(_) => {
-                    warn!("I can't decode cover image for file {full_path}");
-                }
-            };
-            cover
-        } else {
-            None
-        }
-    } else {
-        warn!("unable to load pdf file {}", &full_path);
-        None
-    }
+    // poppler-rs need an URI for file, so I prefix it with `file://`
+    // TODO check with relative path ? => or force absolute ?
+    let full_path = format!("file://{}/{}", file.parent_path, file.name);
+    // cairo test, see https://github.com/DMSrs/poppler-rs/blob/master/src/lib.rs#L144
+    // create a Write buffer to store surface
+    let maybe_cover = Cursor::new(Vec::new());
+    let surface = cairo::PdfSurface::for_stream(420.0, 595.0, maybe_cover).ok()?;
+    let ctx = Context::new(&surface).ok()?;
+    // open pdf file
+    let pdf_document = Document::from_file(&full_path, None).ok()?;
+    // get cover content and render it in surface
+    let page = pdf_document.page(0)?;
+    let (w, h) = page.size();
+    surface.set_size(w, h).ok()?;
+    ctx.save().ok()?;
+    page.render(&ctx);
+    // write surface in a new bytes Vec, it's the cover image
+    let mut image_data: Vec<u8> = Vec::new();
+    surface
+        .write_to_png(&mut Cursor::new(&mut image_data))
+        .ok()?;
+    let cover = image::load_from_memory(&image_data).ok()?;
+    // resize and go
+    let resized_cover: Option<image::DynamicImage> = Some(resize_cover(cover));
+    resized_cover
 }
 
 pub async fn extract_epub_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {

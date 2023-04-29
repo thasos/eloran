@@ -23,6 +23,7 @@ pub async fn comics(file: &FileInfo, page: i32) -> String {
             // set path file wanted from page index
             let image_path_in_achive = comic_file_list
                 .get(page as usize)
+                // TODO FIXME
                 .expect("get file path from file list at");
             // uncompress corresponding image
             let mut vec_comic_page: Vec<u8> = Vec::default();
