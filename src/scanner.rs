@@ -10,8 +10,9 @@ use poppler::Document;
 use sqlx::pool::Pool;
 use sqlx::Sqlite;
 use std::cmp::Ordering;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::Cursor;
+use std::os::linux::fs::MetadataExt;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::runtime::Runtime;
@@ -239,7 +240,6 @@ async fn walk_recent_dir(
                 "new changes in dir {}/{}, need to scan it",
                 current_directory.parent_path, current_directory.name,
             );
-            // TODO use struct ....
             let directory_found = sqlite::check_if_directory_exists(
                 &current_directory.parent_path,
                 &current_directory.name,
@@ -266,45 +266,37 @@ async fn walk_recent_dir(
                     sqlite::delete_file(&file, conn).await;
                 }
             }
-            // TODO insert file if not in DB ! -> replace walk_recent_files_and_insert fn ?
         }
     }
 }
 
 /// walk library dir and return list of files modified after the last successfull scan
 /// insert them in the process_read_dir fn of jwalk crate
-// TODO KO on files moved...
 fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Duration) {
     let library_path = Path::new(&library.path);
     // recursive walk_dir
     let recent_file_list = WalkDirGeneric::<(usize, bool)>::new(library_path)
         .skip_hidden(true)
         .process_read_dir(move |_depth, _path, _read_dir_state, children| {
-            children.iter_mut().for_each(|dir_entry_result| {
-                if let Ok(dir_entry) = dir_entry_result {
-                    // retrieve metadatas for mtime
-                    // TODO too much unwraps
-                    let dir_entry_metadata = dir_entry.metadata().unwrap();
-                    let dir_entry_modified_date = dir_entry_metadata
-                        .modified()
-                        .unwrap()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap();
-                    // check mtime for files only, because directories will be not crossed
+            children.iter_mut().for_each(|files_found| {
+                if let Ok(file) = files_found {
+                    // retrieve metadatas for ctime
+                    let meta = fs::metadata(file.path()).unwrap();
+                    let file_modified_date = Duration::from_secs(meta.st_ctime() as u64);
+                    // check ctime for files only, because directories will be not crossed
                     // without this check
-                    if dir_entry.file_type().is_file()
-                        && dir_entry_modified_date > last_successfull_scan_date
+                    if file.file_type().is_file() && file_modified_date > last_successfull_scan_date
                     {
                         debug!(
                             "modified time {}, greater than last successfull scan {} for file {}",
-                            dir_entry_modified_date.as_secs(),
+                            file_modified_date.as_secs(),
                             last_successfull_scan_date.as_secs(),
-                            dir_entry.file_name().to_string_lossy()
+                            file.file_name().to_string_lossy()
                         );
                         // insert here to benefit the jwalk parallelism
                         // file_infos need to be mutable for ulid genereation
                         let mut file_infos =
-                            extract_file_infos(&library.name, dir_entry.path().as_path());
+                            extract_file_infos(&library.name, file.path().as_path());
                         let filename = file_infos.name.clone();
                         let parent_path = file_infos.parent_path.clone();
                         // create a new tokio runtime for inserts
@@ -340,7 +332,7 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                             }
                         });
                         // flag file for insert
-                        dir_entry.client_state = true;
+                        file.client_state = true;
                     }
                 }
             });
@@ -681,7 +673,36 @@ pub fn extract_comic_image_list(archive: &File) -> Vec<String> {
     let comic_file_list = match list_archive_files(archive) {
         Ok(list) => list,
         Err(e) => {
-            // 🔥🔥🔥 TODO 🔥🔥🔥 probably an encoding prb, error to warn (or info), and loop with ArchiveIterator...
+            // 🔥🔥🔥 TODO 🔥🔥🔥 probably an encoding prb, error to warn (or info), and try with
+            // list_archive_files_with_encoding ?
+            // or ArchiveIterator...
+            // ---------------------------------
+            // let mut name = String::default();
+            // let mut size = 0;
+            // error!("start decode_utf8");
+            // let decode_utf8 = |bytes: &[u8]| Ok(std::str::from_utf8(bytes)?.to_owned());
+            // error!("start ArchiveIterator");
+            // let mut iter = ArchiveIterator::from_read_with_encoding(archive, decode_utf8).unwrap();
+            // error!("start loop");
+            // for content in &mut iter {
+            //     match content {
+            //         ArchiveContents::StartOfEntry(s, _) => {
+            //             error!("{s}");
+            //             name = s
+            //         }
+            //         ArchiveContents::DataChunk(v) => size += v.len(),
+            //         ArchiveContents::EndOfEntry => {
+            //             println!("Entry {} was {} bytes", name, size);
+            //             size = 0;
+            //         }
+            //         ArchiveContents::Err(e) => {
+            //             error!("ArchiveContents Err : {e}");
+            //         }
+            //     }
+            // }
+            // error!("close");
+            // iter.close().unwrap();
+
             warn!("unable to extract file list form archive : {e}");
             Vec::with_capacity(0)
         }
