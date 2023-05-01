@@ -69,6 +69,37 @@ fn parse_credentials(body: &str) -> (String, String) {
     (username, password)
 }
 
+async fn reading_handler(Extension(user): Extension<User>) -> impl IntoResponse {
+    info!("get /reading : {}", &user.name);
+    let conn = sqlite::create_sqlite_pool().await;
+    // search files
+    let mut files_results = sqlite::get_reading_files_from_user_id(&user.id, &conn).await;
+    files_results.sort();
+    // add status (read, bookmark)
+    let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
+    let mut files_results_with_status: Vec<(FileInfo, bool, bool)> =
+        Vec::with_capacity(files_results.capacity());
+    for file in files_results {
+        let bookmark_status = sqlite::get_flag_status("bookmark", user_id, &file.id, &conn).await;
+        let read_status = sqlite::get_flag_status("read_status", user_id, &file.id, &conn).await;
+        files_results_with_status.push((file, bookmark_status, read_status));
+    }
+    // lib path
+    let library_path = sqlite::get_library(None, &conn).await;
+    let library_path = library_path.first().unwrap().to_owned();
+    conn.close().await;
+    // response
+    let list_to_display = html_render::LibraryDisplay {
+        user: user.clone(),
+        directories_list: Vec::with_capacity(0),
+        files_list: files_results_with_status,
+        library_path: library_path.path,
+        current_path: None,
+        search_query: None,
+    };
+    Html(html_render::library(list_to_display))
+}
+
 async fn bookmarks_handler(Extension(user): Extension<User>) -> impl IntoResponse {
     info!("get /bookmarks : {}", &user.name);
     let conn = sqlite::create_sqlite_pool().await;
@@ -189,7 +220,7 @@ async fn infos_handler(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let conn = sqlite::create_sqlite_pool().await;
-    let file = sqlite::get_files_from_id(&id, &conn).await;
+    let file = sqlite::get_files_from_file_id(&id, &conn).await;
     // path for up link
     let library_name = &file.library_name;
     let library_vec = sqlite::get_library(Some(library_name), &conn).await;
@@ -209,10 +240,14 @@ async fn infos_handler(
     let user_id = sqlite::get_user_id_from_name(&user.name, &conn).await;
     let bookmark_status = sqlite::get_flag_status("bookmark", user_id, &file.id, &conn).await;
     let read_status = sqlite::get_flag_status("read_status", user_id, &file.id, &conn).await;
+
+    let current_page = sqlite::get_current_page_from_file_id(user_id, &file.id, &conn).await;
+
     conn.close().await;
     Html(html_render::file_info(
         &user,
         &file,
+        current_page,
         bookmark_status,
         read_status,
         up_link,
@@ -241,7 +276,7 @@ async fn cover_handler(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
     let conn = sqlite::create_sqlite_pool().await;
-    let file = sqlite::get_files_from_id(&id, &conn).await;
+    let file = sqlite::get_files_from_file_id(&id, &conn).await;
     debug!("get /cover/{}", id);
     // defaut cover definition
     let default_cover = {
@@ -290,7 +325,7 @@ async fn download_handler(
 ) -> impl IntoResponse {
     let conn = sqlite::create_sqlite_pool().await;
     info!("get /download/{} : {}", &id, &user.name);
-    let file = sqlite::get_files_from_id(&id, &conn).await;
+    let file = sqlite::get_files_from_file_id(&id, &conn).await;
     let full_path = format!("{}/{}", file.parent_path, file.name);
     dbg!(&full_path);
     // Html(full_path).into_response()
@@ -322,7 +357,7 @@ async fn reader_handler(
     // let page: i32 = page.unwrap_or(0);
     let conn = sqlite::create_sqlite_pool().await;
     info!("get /reader/{} (page {}) : {}", &id, &page, &user.name);
-    let file = sqlite::get_files_from_id(&id, &conn).await;
+    let file = sqlite::get_files_from_file_id(&id, &conn).await;
     // total_page = 0, we need to scan it
     if file.scan_me == 1 {
         scanner::extract_all(&file, &conn).await;
@@ -333,14 +368,16 @@ async fn reader_handler(
     } else {
         page
     };
-    // mark as read if last page
-    if page == file.total_pages - 1
-        && !sqlite::get_flag_status("read_status", user.id as i32, &file.id, &conn).await
-    {
-        let _ = sqlite::set_flag_status("read_status", user.id as i32, &file.id, &conn).await;
-    }
     // set page at current_page
-    sqlite::set_current_page_from_id(&file.id, &page, &conn).await;
+    sqlite::set_current_page_for_file_id(&file.id, &user.id, &page, &conn).await;
+    // remove from reading table if last page
+    if page == file.total_pages - 1 {
+        sqlite::remove_file_id_from_reading(&file.id, &user.id, &conn).await;
+        // and mark as read if needed
+        if !sqlite::get_flag_status("read_status", user.id as i32, &file.id, &conn).await {
+            let _ = sqlite::set_flag_status("read_status", user.id as i32, &file.id, &conn).await;
+        }
+    }
 
     let response = match file.format.as_str() {
         "epub" => {
@@ -605,6 +642,10 @@ async fn create_router() -> Router {
             Role::User..,
         ))
         .route("/bookmarks", get(bookmarks_handler))
+        .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
+            Role::User..,
+        ))
+        .route("/reading", get(reading_handler))
         .route_layer(RequireAuthorizationLayer::<User, Role>::login_with_role(
             Role::User..,
         ))

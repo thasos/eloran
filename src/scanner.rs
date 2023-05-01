@@ -39,7 +39,7 @@ impl Library {
 }
 
 /// File struct, match database fields
-/// id|name|parent_path|read_status|scan_me|added_date|format|size|total_pages|current_page
+/// id|name|parent_path|read_status|scan_me|added_date|format|size|total_pages
 // #[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq, Eq, PartialOrd, Ord)]
 #[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq, Eq)]
 pub struct FileInfo {
@@ -57,7 +57,6 @@ pub struct FileInfo {
     // i64 because no u64 with sqlite...
     pub size: i64,
     pub total_pages: i32,
-    pub current_page: i32,
     // list of users id separated by comma : `id1,id2,...`
     pub read_by: String,
     pub bookmarked_by: String,
@@ -76,7 +75,6 @@ impl FileInfo {
             // format: Format::Other,
             size: 0,
             total_pages: 0,
-            current_page: 0,
             read_by: "".to_string(),
             bookmarked_by: "".to_string(),
         }
@@ -185,7 +183,6 @@ fn extract_file_infos(library_name: &str, entry: &Path) -> FileInfo {
         format,
         size: size.unwrap_or(0) as i64,
         total_pages: 0,
-        current_page: 0,
         read_by: "".to_string(),
         bookmarked_by: "".to_string(),
     }
@@ -856,7 +853,6 @@ mod tests {
             format: "pdf".to_string(),
             size: 10,
             total_pages: 0,
-            current_page: 0,
             // id and added_date are random, so we take them from validation_file
             added_date: validation_file.added_date.clone(),
             id: validation_file.id.clone(),
@@ -880,7 +876,6 @@ mod tests {
             format: "pdf".to_string(),
             size: 10,
             total_pages: 0,
-            current_page: 0,
             // id and added_date are random, so we take them from validation_file
             added_date: 666,
             id: "666".to_string(),

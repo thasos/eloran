@@ -70,6 +70,7 @@ pub fn logout(user: &User) -> String {
 pub fn file_info(
     user: &User,
     file: &FileInfo,
+    current_page: i32,
     bookmark_status: bool,
     read_status: bool,
     up_link: String,
@@ -80,7 +81,7 @@ pub fn file_info(
         : menu;
         div(id="infos") {
             h2(style="text-align: center;") {
-                a(href=format!("/read/{}/{}", file.id, file.current_page), class="navigation") : "📖 read file";
+                a(href=format!("/read/{}/{}", file.id, current_page), class="navigation") : "📖 read file";
                 : " | " ;
                 a(href=format!("/download/{}", file.id), class="navigation") : "⤵ download";
             }
@@ -100,7 +101,7 @@ pub fn file_info(
                 p(style="text-align: center;") {
                     : format!("size : {}", file.size) ;
                     br;
-                    : format!("page : {}/{}",file.current_page, file.total_pages) ;
+                    : format!("page : {}/{}", current_page, file.total_pages) ;
                     br;
                     : format!("type : {}",file.format) ;
                     br;
@@ -287,6 +288,8 @@ fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::Ren
                 a(href="/library") : "library" ;
                 : " | ";
                 a(href="/bookmarks") : "bookmarks" ;
+                : " | ";
+                a(href="/reading") : "reading" ;
                 : " | ";
                 a(href="/prefs") : "preferences" ;
                 // print admin link if Role is ok

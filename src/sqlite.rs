@@ -84,13 +84,19 @@ CREATE TABLE IF NOT EXISTS files (
   format TEXT DEFAULT NULL,
   size INTEGER NOT NULL DEFAULT 0,
   total_pages INTEGER NOT NULL DEFAULT 0,
-  current_page INTEGER NOT NULL DEFAULT 0,
   read_by TEXT DEFAULT NULL,
   bookmarked_by TEXT DEFAULT NULL
 );
 CREATE TABLE IF NOT EXISTS covers (
   id ULID PRIMARY KEY NOT NULL,
   cover BLOB DEFAULT NULL
+);
+CREATE TABLE IF NOT EXISTS reading (
+  id INTEGER PRIMARY KEY NOT NULL,
+  file_id ULID NOT NULL,
+  user_id INTEGER NOT NULL,
+  page INTEGER NOT NULL,
+  UNIQUE(file_id, user_id)
 );
 CREATE TABLE IF NOT EXISTS core (
   id INTEGER PRIMARY KEY NOT NULL,
@@ -207,9 +213,9 @@ pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileI
 }
 
 /// get FileInfo from file id
-pub async fn get_files_from_id(id: &str, conn: &Pool<Sqlite>) -> FileInfo {
+pub async fn get_files_from_file_id(file_id: &str, conn: &Pool<Sqlite>) -> FileInfo {
     let file: FileInfo = match sqlx::query_as("SELECT * FROM files WHERE id = ?;")
-        .bind(id)
+        .bind(file_id)
         .fetch_one(conn)
         .await
     {
@@ -225,38 +231,83 @@ pub async fn get_files_from_id(id: &str, conn: &Pool<Sqlite>) -> FileInfo {
     file
 }
 
-/// get currentPage from file id (can be usefull for sync)
-pub async fn _get_current_page_from_id(id: &str, conn: &Pool<Sqlite>) -> i32 {
-    let file: i32 = match sqlx::query("SELECT current_page FROM files WHERE id = ?;")
-        .bind(id)
-        .fetch_one(conn)
-        .await
+/// get reading FileInfo from user id
+pub async fn get_reading_files_from_user_id(user_id: &i64, conn: &Pool<Sqlite>) -> Vec<FileInfo> {
+    let file: Vec<FileInfo> = match sqlx::query_as(
+        "SELECT files.* FROM reading
+        INNER JOIN files ON files.id = reading.file_id
+        WHERE reading.user_id = ?;",
+    )
+    .bind(user_id)
+    .fetch_all(conn)
+    .await
     {
-        Ok(file_found) => file_found.get("current_page"),
+        Ok(file_found) => file_found,
         Err(e) => {
-            error!(
-                "unable to retrieve current page from database fore id {} : {}",
-                id, e
-            );
-            0
+            error!("unable to retrieve reading file : {e}");
+            Vec::with_capacity(0)
         }
     };
     file
 }
 
+/// get currentPage from file id (can be usefull for sync)
+pub async fn get_current_page_from_file_id(
+    user_id: i32,
+    file_id: &str,
+    conn: &Pool<Sqlite>,
+) -> i32 {
+    let page_number: i32 =
+        match sqlx::query("SELECT page FROM reading WHERE file_id = ? AND user_id = ?;")
+            .bind(file_id)
+            .bind(user_id)
+            .fetch_one(conn)
+            .await
+        {
+            Ok(file_found) => file_found.get("page"),
+            Err(e) => {
+                error!("unable to retrieve current page for file id {file_id} : {e}");
+                0
+            }
+        };
+    page_number
+}
+
 /// set currentPage from file id
-pub async fn set_current_page_from_id(id: &str, page: &i32, conn: &Pool<Sqlite>) {
-    match sqlx::query("UPDATE files SET current_page = ? WHERE id = ?;")
-        .bind(page)
-        .bind(id)
+pub async fn remove_file_id_from_reading(file_id: &str, user_id: &i64, conn: &Pool<Sqlite>) {
+    match sqlx::query("DELETE FROM reading WHERE file_id = ? AND user_id = ?;")
+        .bind(file_id)
+        .bind(user_id)
         .execute(conn)
         .await
     {
-        Ok(_) => debug!("current_page successfully setted to {} for id {}", page, id),
+        Ok(_) => debug!("file id {file_id} removed from reading table"),
+        Err(e) => error!("unable to remove file id {file_id} from reading table : {e}"),
+    };
+}
+
+/// set currentPage from file id
+pub async fn set_current_page_for_file_id(
+    file_id: &str,
+    user_id: &i64,
+    page: &i32,
+    conn: &Pool<Sqlite>,
+) {
+    match sqlx::query("INSERT OR REPLACE INTO reading(file_id,user_id,page) VALUES (?, ?, ?);")
+        .bind(file_id)
+        .bind(user_id)
+        .bind(page)
+        .execute(conn)
+        .await
+    {
+        Ok(_) => debug!(
+            "current_page successfully setted to {} for id {}",
+            page, file_id
+        ),
         Err(e) => {
             error!(
                 "unable to set current page from database fore id {} : {}",
-                id, e
+                file_id, e
             );
         }
     };
@@ -569,8 +620,8 @@ pub async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Poo
     };
     file.id = ulid;
     match sqlx::query(
-        "INSERT OR REPLACE INTO files(id, name, library_name, parent_path, size, added_date, scan_me, format, current_page, total_pages, read_by, bookmarked_by)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
+        "INSERT OR REPLACE INTO files(id, name, library_name, parent_path, size, added_date, scan_me, format, total_pages, read_by, bookmarked_by)
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);")
         .bind(&file.id)
         .bind(&file.name)
         .bind(&file.library_name)
@@ -579,7 +630,6 @@ pub async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Poo
         .bind(file.added_date)
         .bind(file.scan_me)
         .bind(&file.format)
-        .bind(file.current_page)
         .bind(file.total_pages)
         .bind(&file.read_by)
         .bind(&file.bookmarked_by)
