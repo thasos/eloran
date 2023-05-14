@@ -119,7 +119,9 @@ pub async fn init_default_users() {
     let schema = r#"
 INSERT OR IGNORE INTO users(id, password_hash, name, role)
 VALUES (1,'pass123','admin','Admin'),
-       (2,'666','thas','User');
+       (2,'666','thas','User'),
+       (3,'666','dod','User'),
+       (4,'666','swiip','User');
     "#;
     match sqlx::query(schema).execute(&conn).await {
         Ok(_) => info!("users successfully created"),

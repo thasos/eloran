@@ -36,9 +36,11 @@ div.container {
 div.gallery {
   margin: 5px;
   padding: 15px;
-  float: left;
+  /* float: left; */
   width: 180px;
   /* height: 245px; */
+  display: inline-block;
+  vertical-align: bottom;
 }
 
 div.gallery img {
