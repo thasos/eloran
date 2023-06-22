@@ -1,4 +1,5 @@
-use crate::scanner::{DirectoryInfo, FileInfo};
+use crate::http_server::User;
+use crate::scanner::{DirectoryInfo, FileInfo, Library};
 
 use base64::{engine::general_purpose, Engine as _};
 use image::{DynamicImage, ImageOutputFormat};
@@ -130,12 +131,17 @@ VALUES (1,'pass123','admin','Admin'),
 }
 
 /// register the library path in database if needed
-use crate::scanner::Library;
 pub async fn create_library_path(library_path: Vec<String>) {
+    // TODO test if path exists before add
     for path in library_path {
         let library = Library {
             id: 0,
-            name: path.split('/').last().unwrap().to_string(),
+            name: path
+                .trim_end_matches('/')
+                .split('/')
+                .last()
+                .unwrap()
+                .to_string(),
             path: path.to_string(),
             last_successfull_scan_date: 0,
             last_successfull_extract_date: 0,
@@ -155,15 +161,59 @@ pub async fn create_library_path(library_path: Vec<String>) {
     }
 }
 
+/// delete a library path in database
+pub async fn delete_library_from_id(library_list: &Vec<Library>, conn: &Pool<Sqlite>) {
+    for library in library_list {
+        debug!("delete library id {} : {}", library.id, library.name);
+        match sqlx::query("DELETE FROM core WHERE id = ?;")
+            .bind(library.id)
+            .execute(conn)
+            .await
+        {
+            Ok(_) => info!("library {} successfully deleted", library.name),
+            Err(e) => error!("failed to delete library {} : {}", library.name, e),
+        }
+    }
+}
+
+/// delete files of a library name
+pub async fn delete_files_from_library(library_list: &Vec<Library>, conn: &Pool<Sqlite>) {
+    for library in library_list {
+        debug!("delete files from library {}", library.name);
+        match sqlx::query("DELETE FROM files WHERE library_name = ?;")
+            .bind(library.name.clone())
+            .execute(conn)
+            .await
+        {
+            Ok(_) => info!("files of library {} successfully deleted", library.name),
+            Err(e) => error!("failed to delete files of library {} : {}", library.name, e),
+        }
+    }
+}
+
 /// retrieve all the library path in database
 /// we can specify a name, in this case, return a Vec with one row
-pub async fn get_library(name: Option<&str>, conn: &Pool<Sqlite>) -> Vec<Library> {
+pub async fn get_library(
+    name: Option<&str>,
+    id: Option<&str>,
+    conn: &Pool<Sqlite>,
+) -> Vec<Library> {
     // add a WHERE condition when a name is given
-    let where_name = match name {
-        Some(name) => format!("WHERE name = '{}'", name),
-        None => "".to_string(),
+    let where_clause = if name.is_some() {
+        match name {
+            Some(name) => format!("WHERE name = '{}'", name),
+            None => "".to_string(),
+        }
+    } else if id.is_some() {
+        match id {
+            Some(id) => format!("WHERE id = '{}'", id),
+            None => "".to_string(),
+        }
+    } else {
+        "".to_string()
     };
-    match sqlx::query_as(&format!("SELECT * FROM core {};", where_name))
+    // send query
+    match sqlx::query_as(&format!("SELECT * FROM core {};", where_clause))
         .fetch_all(conn)
         .await
     {
@@ -186,7 +236,7 @@ pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileI
     };
     // remove file name (after last '/')
     path_elements.pop();
-    let parent_path = get_library(None, conn).await;
+    let parent_path = get_library(None, None, conn).await;
     let mut parent_path = parent_path.first().unwrap().name.to_owned();
     for element in path_elements {
         parent_path.push_str(element);
@@ -255,7 +305,7 @@ pub async fn get_reading_files_from_user_id(user_id: &i64, conn: &Pool<Sqlite>) 
 
 /// get currentPage from file id (can be usefull for sync)
 pub async fn get_current_page_from_file_id(
-    user_id: i32,
+    user_id: i64,
     file_id: &str,
     conn: &Pool<Sqlite>,
 ) -> i32 {
@@ -267,10 +317,8 @@ pub async fn get_current_page_from_file_id(
             .await
         {
             Ok(file_found) => file_found.get("page"),
-            Err(e) => {
-                error!("unable to retrieve current page for file id {file_id} : {e}");
-                0
-            }
+            // set page to 0 if not set
+            Err(_) => 0,
         };
     page_number
 }
@@ -397,28 +445,40 @@ pub async fn set_scan_flag(file: &FileInfo, flag: i8, conn: &Pool<Sqlite>) {
     };
 }
 
-// TODO create EloranUser struct ?
-pub async fn get_user_id_from_name(user_name: &str, conn: &Pool<Sqlite>) -> i32 {
-    let user_id: i32 = match sqlx::query("SELECT id FROM users WHERE name = ?;")
-        .bind(user_name)
-        .fetch_one(conn)
+// pub async fn get_user(name: Option<&str>, id: Option<&str>, conn: &Pool<Sqlite>) -> i32 {
+pub async fn get_user(name: Option<&str>, id: Option<&str>, conn: &Pool<Sqlite>) -> Vec<User> {
+    // TODO optional WHERE ?
+    let where_clause = if name.is_some() {
+        match name {
+            Some(name) => format!("WHERE name = '{}'", name),
+            None => "".to_string(),
+        }
+    } else if id.is_some() {
+        match id {
+            Some(id) => format!("WHERE id = '{}'", id),
+            None => "".to_string(),
+        }
+    } else {
+        "".to_string()
+    };
+    // let user_id: i32 = match sqlx::query(&format!("SELECT id FROM users {};", where_clause))
+    match sqlx::query_as(&format!("SELECT * FROM users {};", where_clause))
+        .fetch_all(conn)
         .await
     {
-        Ok(id) => id.get("id"),
+        // Ok(id) => id.get("id"),
+        Ok(user) => user,
         Err(e) => {
-            error!("failed to get id from user name {} : {e}", user_name);
-            // return a fake user id, good practice ?
-            // TODO Some is better
-            -1
+            error!("failed to get user : {e}");
+            Vec::with_capacity(0)
         }
-    };
-    user_id
+    }
 }
 
 pub async fn set_flag_status(
     // TODO use flag to standardise this fn
     flag: &str,
-    user_id: i32,
+    user_id: i64,
     file_id: &str,
     conn: &Pool<Sqlite>,
 ) -> bool {
@@ -493,7 +553,7 @@ pub async fn set_flag_status(
     }
 }
 
-pub async fn get_flag_status(flag: &str, user_id: i32, file_id: &str, conn: &Pool<Sqlite>) -> bool {
+pub async fn get_flag_status(flag: &str, user_id: i64, file_id: &str, conn: &Pool<Sqlite>) -> bool {
     let (request, column) = match flag {
         "bookmark" => (
             "SELECT bookmarked_by FROM files WHERE id = ?;",

@@ -47,6 +47,13 @@ pub async fn comics(file: &FileInfo, page: i32) -> String {
                     Ok(img) => {
                         format!(
                             // TODO create a `page` router to render directly without base64
+                            // with responsive `<picture>` :
+                            // <picture>
+                            //   <source srcset="img_smallflower.jpg" media="(max-width: 600px)">
+                            //   <source srcset="img_flowers.jpg" media="(max-width: 1500px)">
+                            //   <source srcset="flowers.jpg">
+                            //   <img src="img_smallflower.jpg" alt="Flowers">
+                            // </picture>
                             "<img src=\"data:image/jpeg;base64,{}\" class=\"responsive\")",
                             sqlite::image_to_base64(&img)
                         )

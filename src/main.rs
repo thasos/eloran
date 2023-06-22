@@ -25,7 +25,9 @@ async fn main() -> Result<(), Error> {
     sqlite::init_database().await;
     // TODO remove dbg users when install page is done
     sqlite::init_default_users().await;
-    sqlite::create_library_path(conf.library_path.unwrap()).await;
+    if conf.library_path.is_some() {
+        sqlite::create_library_path(conf.library_path.unwrap()).await;
+    }
 
     // start routines
     // scan the library files and add them in database

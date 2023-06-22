@@ -1,7 +1,5 @@
-use crate::http_server::Role;
-use crate::http_server::User;
-use crate::scanner::DirectoryInfo;
-use crate::scanner::FileInfo;
+use crate::http_server::{Role, User};
+use crate::scanner::{DirectoryInfo, FileInfo, Library};
 
 use horrorshow::{helper::doctype, Raw, Template};
 
@@ -23,12 +21,121 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
     }
 }
 
+pub fn prefs(user: &User) -> String {
+    let menu = menu(user.to_owned(), None);
+    let body_content = box_html! {
+        : menu;
+        h2 { : "Preferences" }
+        div {
+            p { : "(todo) display all files or just readables"; }
+            p { : "(todo) grid or list view"; }
+            p { : "(todo) theme : dark or light"; }
+        }
+    };
+
+    render(body_content, None)
+}
+
+pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> String {
+    let menu = menu(user.to_owned(), None);
+    let body_content = box_html! {
+        : menu;
+        h2 { : "Admin Panel" }
+        h3 { : "Libraries Path" }
+        div {
+            ul {
+                @ for library in library_list {
+                    li(class="item") {
+                        form(action=format!("/admin/library/{}", library.id), method="post") {
+                            div {
+                                : library.name;
+                                : " ";
+                                input(type="submit", name="delete", value="Delete");
+                                : " ";
+                                input(type="submit", name="full_rescan", value="Full Rescan (todo)");
+                                : " ";
+                                input(type="submit", name="covers", value="Disable Covers (todo)");
+                            }
+                        }
+                    }
+                }
+                li {
+                    form(accept-charset="utf-8", action="/admin/library/new", method="post") {
+                        input(type="text", name="path", placeholder="path", required);
+                        input(type="submit", value="New library path");
+                    }
+                }
+            }
+        }
+        h3 { : "Options" }
+        div {
+            ul {
+                li {
+                    form(accept-charset="utf-8", action="/sleep_time", method="post") {
+                        input(type="text", name="time", placeholder="sleep time", required);
+                        input(type="submit", value="Update (todo)");
+                    }
+                }
+            }
+        }
+        h3 { : "Users" }
+        div {
+            ul {
+                @ for user in user_list {
+                    li(class="item") {
+                        div {
+                            form(accept-charset="utf-8", action="/admin/user/update", method="post") {
+                                label { : user.name }
+                                : " ";
+                                input(type="password", name="password", placeholder="password", required);
+                                : " ";
+                                @ if user.role == Role::Admin {
+                                    input(type="checkbox", id="admin_box", name="admin", checked)
+                                } else {
+                                    input(type="checkbox", id="admin_box", name="admin")
+                                }
+                                label(for="admin_box") { : " Admin " }
+                                input(type="submit", value="Update (todo)");
+                            }
+                            : " ";
+                            form(accept-charset="utf-8", action="/admin/user/delete", method="post") {
+                                input(type="submit", value="Delete (todo)");
+                            }
+                        }
+                    }
+                }
+                li {
+                    form(accept-charset="utf-8", action="/admin/user/new", method="post") {
+                        input(type="text", name="name", placeholder="name", required);
+                        : " ";
+                        input(type="password", name="password", placeholder="password", required);
+                        : " ";
+                        input(type="checkbox", id="admin_box", name="admin");
+                        label(for="admin_box") { : " Admin " }
+                        input(type="submit", value="New user (todo)");
+                    }
+                }
+            }
+        }
+        h3 { : "Stats" }
+        div {
+            ul {
+                li { : "Number of publication : 🤷" }
+                li { : "Number of users : 🤷" }
+                li { : "Publication readed : 🤷" }
+                li { : "Publication bookmarked : 🤷" }
+            }
+        }
+    };
+
+    render(body_content, None)
+}
+
 pub fn login_form() -> String {
-    debug!("fn login_form");
     let body_content = box_html! {
         p { : "Please login :" }
         p {
-            form(action="/login", method="post") {
+            form(accept-charset="utf-8", action="/login", method="post") {
             input(type="text", name="user", placeholder="username", required);
             br;
             input(type="password", name="password", placeholder="password", required);
@@ -42,7 +149,6 @@ pub fn login_form() -> String {
 }
 
 pub fn login_ok(user: &User) -> String {
-    debug!("fn login ok");
     // TODO moche
     let user = user.clone();
     let body_content = box_html! {
@@ -55,7 +161,6 @@ pub fn login_ok(user: &User) -> String {
 }
 
 pub fn logout(user: &User) -> String {
-    debug!("fn logout");
     // TODO moche
     let user = user.clone();
     let body_content = box_html! { p
@@ -191,7 +296,6 @@ pub struct LibraryDisplay {
 }
 
 pub fn library(list_to_display: LibraryDisplay) -> String {
-    debug!("fn homepage");
     // we dispose of following variables :
     // - directory.name : Subdir2
     // - directory.parent_path : /home/thasos/mylibrary/Dragonlance
@@ -280,7 +384,6 @@ pub fn library(list_to_display: LibraryDisplay) -> String {
 }
 
 fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::RenderBox + 'a> {
-    debug!("fn menu");
     // TODO print a pretty menu, 1 line...
     let menu_content = box_html! {
         div(id="menu") {
@@ -298,12 +401,12 @@ fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::Ren
                     a(href="/admin") : "administration" ;
                 }
                 : " | ";
-                : format!("{}", user.name.as_str()) ;
+                : format!("{} - {:?}", user.name.as_str(), user.role) ;
                 : " (";
                 a(href="/logout") : "logout" ;
                 : ")";
             }
-            form(action="/search", method="post") {
+            form(accept-charset="utf-8", action="/search", method="post") {
                 @ if let Some(query) = &search_query {
                     input(type="text", placeholder=query, name="query", value=query) ;
                 } else {
@@ -316,7 +419,6 @@ fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::Ren
 }
 
 pub fn homepage(user: &User) -> String {
-    debug!("fn homepage");
     // TODO moche (obligé le clone  ?)
     let menu = menu(user.to_owned(), None);
     let body_content = box_html! {
