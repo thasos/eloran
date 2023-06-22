@@ -1,9 +1,10 @@
 use crate::scanner::{self, FileInfo};
-use crate::sqlite;
 
 use compress_tools::*;
 use epub::doc::EpubDoc;
+use image::imageops::FilterType;
 use std::fs::File;
+use std::io::Cursor;
 
 // pub fn raw(_user: User, _file: FileInfo) -> String {
 //     todo!();
@@ -12,9 +13,11 @@ use std::fs::File;
 //     todo!();
 // }
 
-// TODO load previous and next images for smoother experience ?
-pub async fn comics(file: &FileInfo, page: i32) -> String {
-    info!("reading {}/{} (page {page})", file.parent_path, file.name);
+pub async fn get_comic_page(file: &FileInfo, page: i32, size: &str) -> Option<Vec<u8>> {
+    info!(
+        "reading comic {}/{} (page {page})",
+        file.parent_path, file.name
+    );
     let archive_path = &format!("{}/{}", file.parent_path, file.name);
     match File::open(archive_path) {
         Ok(compressed_comic_file) => {
@@ -22,10 +25,7 @@ pub async fn comics(file: &FileInfo, page: i32) -> String {
             let comic_file_list = scanner::extract_comic_image_list(&compressed_comic_file);
             // set path file wanted from page index
             if !comic_file_list.is_empty() {
-                let image_path_in_achive = comic_file_list
-                    .get(page as usize)
-                    // TODO FIXME
-                    .expect("get file path from file list at");
+                let image_path_in_achive = comic_file_list.get(page as usize)?;
                 // uncompress corresponding image
                 let mut vec_comic_page: Vec<u8> = Vec::default();
 
@@ -42,32 +42,35 @@ pub async fn comics(file: &FileInfo, page: i32) -> String {
                         image_path_in_achive, file.name
                     ),
                 }
-                // return img in base64
-                match image::load_from_memory(&vec_comic_page) {
-                    Ok(img) => {
-                        format!(
-                            // TODO create a `page` router to render directly without base64
-                            // with responsive `<picture>` :
-                            // <picture>
-                            //   <source srcset="img_smallflower.jpg" media="(max-width: 600px)">
-                            //   <source srcset="img_flowers.jpg" media="(max-width: 1500px)">
-                            //   <source srcset="flowers.jpg">
-                            //   <img src="img_smallflower.jpg" alt="Flowers">
-                            // </picture>
-                            "<img src=\"data:image/jpeg;base64,{}\" class=\"responsive\")",
-                            sqlite::image_to_base64(&img)
-                        )
-                    }
-                    Err(_) => "error comic".to_string(),
-                }
+                // return img in jpg
+                let dyn_image_comic_page = image::load_from_memory(&vec_comic_page).ok()?;
+                // resize smaller if needed
+                let dyn_image_comic_page = match size {
+                    // TODO true ratio not needed, but check size (600 px too much ?)
+                    // let w = dyn_image_comic_page.width();
+                    // let h = dyn_image_comic_page.height();
+                    "300px" => dyn_image_comic_page.resize(300, 1000, FilterType::Triangle),
+                    "500px" => dyn_image_comic_page.resize(500, 1400, FilterType::Triangle),
+                    "800px" => dyn_image_comic_page.resize(800, 2000, FilterType::Triangle),
+                    "1000px" => dyn_image_comic_page.resize(1000, 2500, FilterType::Triangle),
+                    _ => dyn_image_comic_page,
+                };
+                // encode to jpeg
+                // TODO do not encode if already jpeg
+                let mut bytes_comic_page: Vec<u8> = Vec::new();
+                dyn_image_comic_page
+                    .write_to(
+                        &mut Cursor::new(&mut bytes_comic_page),
+                        // jpeg quality
+                        image::ImageOutputFormat::Jpeg(75),
+                    )
+                    .ok()?;
+                Some(bytes_comic_page)
             } else {
-                "unable to extract images list".to_string()
+                None
             }
         }
-        Err(e) => {
-            warn!("unable to read file {archive_path} : {e}");
-            String::new()
-        }
+        Err(_) => None,
     }
 }
 

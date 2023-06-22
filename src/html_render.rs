@@ -249,6 +249,47 @@ pub fn flag_toggle(user: &User, flag_status: bool, file_id: &str, flag: &str) ->
     render(body_content, Some(&redirect_url))
 }
 
+pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
+    let menu = menu(user.to_owned(), None);
+    let file = file.clone();
+    // don't go outside the range of the book
+    let previous_page = match page {
+        0 => 0,
+        _ => page - 1,
+    };
+    let next_page = if page < file.total_pages - 1 {
+        page + 1
+    } else {
+        file.total_pages - 1
+    };
+    let body_content = box_html! {
+        : menu;
+        h1(id="navigation", align="center") {
+            // TODO go to page number
+            a(href=format!("/read/{}/{}", file.id, previous_page), class="navigation") : "⬅️";
+            : " | " ;
+            a(href=format!("/read/{}/{}", file.id, 0), class="navigation") : "start";
+            : " | " ;
+            a(href=format!("/infos/{}", file.id), class="navigation") : "close";
+            : " | " ;
+            a(href=format!("/read/{}/{}", file.id, file.total_pages - 1), class="navigation") : "end";
+            : " | " ;
+            a(href=format!("/read/{}/{}", file.id, next_page), class="navigation") : "➡️";
+        }
+        div(id="comic-content") {
+            picture {
+                source(srcset=format!("/comic_page/{}/{}/300px", file.id, page), media="(max-width: 300px)");
+                source(srcset=format!("/comic_page/{}/{}/500px", file.id, page), media="(max-width: 500px)");
+                source(srcset=format!("/comic_page/{}/{}/800px", file.id, page), media="(max-width: 800px)");
+                source(srcset=format!("/comic_page/{}/{}/1000px", file.id, page), media="(max-width: 1000px)");
+                source(srcset=format!("/comic_page/{}/{}/orig", file.id, page));
+                img(src=format!("/comic_page/{}/{}/orig", file.id, page), alt="TODO_PAGE_NUM");
+            }
+        }
+    };
+    render(body_content, None)
+}
+
 pub fn ebook_reader(user: &User, file: &FileInfo, epub_content: &str, page: i32) -> String {
     let menu = menu(user.to_owned(), None);
     let epub_content = epub_content.to_string();

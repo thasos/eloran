@@ -358,6 +358,25 @@ async fn download_handler(
     }
 }
 
+// TODO return image, origin or small
+async fn comic_page_handler(
+    Extension(user): Extension<User>,
+    Path((id, page, size)): Path<(String, i32, String)>,
+) -> impl IntoResponse {
+    info!("get /reader/{} (page {}) : {}", &id, &page, &user.name);
+    let conn = sqlite::create_sqlite_pool().await;
+    let file = sqlite::get_files_from_file_id(&id, &conn).await;
+    match reader::get_comic_page(&file, page, &size).await {
+        Some(comic_board) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "image/jpeg")],
+            comic_board,
+        )
+            .into_response(),
+        None => "unable to get image".into_response(),
+    }
+}
+
 async fn reader_handler(
     Extension(user): Extension<User>,
     Path((id, page)): Path<(String, i32)>,
@@ -414,8 +433,9 @@ async fn reader_handler(
         }
         // "cbr" => reader::cbr(&user, file),
         "cbz" | "cbr" | "cb7" => {
-            let comic_reader = reader::comics(&file, page).await;
-            Html(html_render::ebook_reader(&user, &file, &comic_reader, page)).into_response()
+            // let comic_reader = reader::comics(&file, page).await;
+            // Html(html_render::ebook_reader(&user, &file, &comic_reader, page)).into_response()
+            Html(html_render::comic_reader(&user, &file, page)).into_response()
         }
         // TODO txt and raw readers
         // "txt" => reader::txt(&user, file),
@@ -744,6 +764,7 @@ async fn create_router() -> Router {
         .route("/search", post(search_handler))
         .route("/download/:id", get(download_handler))
         .route("/read/:id/:page", get(reader_handler))
+        .route("/comic_page/:id/:page/:size", get(comic_page_handler))
         .route("/infos/:id", get(infos_handler))
         .route("/cover/:id", get(cover_handler))
         .route_layer(RequireAuth::login_with_role(Role::User..))

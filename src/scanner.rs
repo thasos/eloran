@@ -777,6 +777,8 @@ pub fn resize_cover(cover: image::DynamicImage) -> image::DynamicImage {
     // see doc https://docs.rs/image/0.24.5/image/imageops/enum.FilterType.html
     // for quality of resize (Nearest is ugly)
     // TODO do not keep ratio ? crop ? the max heigh is the most important
+    // TODO test thumbnail fn :
+    // https://docs.rs/image/latest/image/enum.DynamicImage.html#method.thumbnail
     cover.resize(150, 230, FilterType::Triangle)
 
     // // test crate fast_image_resize ?
