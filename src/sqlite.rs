@@ -1,13 +1,10 @@
 use crate::http_server::User;
 use crate::scanner::{DirectoryInfo, FileInfo, Library};
 
-use base64::{engine::general_purpose, Engine as _};
-use image::{DynamicImage, ImageOutputFormat};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use sqlx::{pool::Pool, Row};
 use std::fs;
-use std::io::Cursor;
 use std::path::Path;
 use std::process;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -361,16 +358,6 @@ pub async fn set_current_page_for_file_id(
             );
         }
     };
-}
-
-pub fn image_to_base64(img: &DynamicImage) -> String {
-    let mut image_data: Vec<u8> = Vec::new();
-    img.write_to(
-        &mut Cursor::new(&mut image_data),
-        ImageOutputFormat::Jpeg(75),
-    )
-    .unwrap();
-    general_purpose::STANDARD.encode(image_data)
 }
 
 /// insert cover for a file

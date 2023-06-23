@@ -278,8 +278,6 @@ pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
         }
         div(id="comic-content") {
             picture {
-                source(srcset=format!("/comic_page/{}/{}/300px", file.id, page), media="(max-width: 300px)");
-                source(srcset=format!("/comic_page/{}/{}/500px", file.id, page), media="(max-width: 500px)");
                 source(srcset=format!("/comic_page/{}/{}/800px", file.id, page), media="(max-width: 800px)");
                 source(srcset=format!("/comic_page/{}/{}/1000px", file.id, page), media="(max-width: 1000px)");
                 source(srcset=format!("/comic_page/{}/{}/orig", file.id, page));

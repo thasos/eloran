@@ -49,8 +49,6 @@ pub async fn get_comic_page(file: &FileInfo, page: i32, size: &str) -> Option<Ve
                     // TODO true ratio not needed, but check size (600 px too much ?)
                     // let w = dyn_image_comic_page.width();
                     // let h = dyn_image_comic_page.height();
-                    "300px" => dyn_image_comic_page.resize(300, 1000, FilterType::Triangle),
-                    "500px" => dyn_image_comic_page.resize(500, 1400, FilterType::Triangle),
                     "800px" => dyn_image_comic_page.resize(800, 2000, FilterType::Triangle),
                     "1000px" => dyn_image_comic_page.resize(1000, 2500, FilterType::Triangle),
                     _ => dyn_image_comic_page,
