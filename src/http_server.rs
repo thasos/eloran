@@ -3,6 +3,7 @@ use crate::reader;
 use crate::scanner::{self, DirectoryInfo, FileInfo, Library};
 use crate::sqlite;
 
+// use async_sqlx_session::SqliteSessionStore;
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::{
@@ -736,6 +737,19 @@ async fn create_router() -> Router {
     let secret = rand::thread_rng().gen::<[u8; 64]>();
     // TODO MemoryStore KO in prod
     let session_store = MemoryStore::new();
+    // --
+    // test with https://docs.rs/async-sqlx-session/
+    // a restart still destroy the session... why ?
+    // I see sessions in sqlite : `SELECT * FROM async_sessions ;`
+    // --
+    // let session_store = SqliteSessionStore::new(crate::DB_URL)
+    //     .await
+    //     .expect("unable to connect to database to create auth session");
+    // session_store
+    //     .migrate()
+    //     .await
+    //     .expect("unable to create auth session in database");
+
     // TODO cookies options (secure, ttl, ...) :
     // https://docs.rs/axum-sessions/0.4.1/axum_sessions/struct.SessionLayer.html#implementations
     let session_layer = SessionLayer::new(session_store, &secret).with_secure(false);
@@ -809,7 +823,7 @@ pub async fn start_http_server(bind: &str) -> Result<(), Error> {
     axum::Server::bind(&bind)
         .serve(router.await.into_make_service())
         .await
-        .unwrap();
+        .expect("unable to bind http server");
 
     Ok(())
 }
