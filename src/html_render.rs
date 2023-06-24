@@ -21,18 +21,27 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
     }
 }
 
+pub fn simple_message(message: String, origin: String) -> String {
+    let body_content = box_html! {
+        div {
+            p { : message; }
+        }
+    };
+    render(body_content, Some(&origin))
+}
+
 pub fn prefs(user: &User) -> String {
     let menu = menu(user.to_owned(), None);
     let body_content = box_html! {
         : menu;
         h2 { : "Preferences" }
         div {
+            p { : "(todo) change password"; }
             p { : "(todo) display all files or just readables"; }
             p { : "(todo) grid or list view"; }
             p { : "(todo) theme : dark or light"; }
         }
     };
-
     render(body_content, None)
 }
 
@@ -61,7 +70,7 @@ pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> S
                 }
                 li {
                     form(accept-charset="utf-8", action="/admin/library/new", method="post") {
-                        input(type="text", name="path", placeholder="path", required);
+                        input(type="text", name="path", placeholder="absolute path", required);
                         input(type="submit", value="New library path");
                     }
                 }
@@ -72,7 +81,7 @@ pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> S
             ul {
                 li {
                     form(accept-charset="utf-8", action="/sleep_time", method="post") {
-                        input(type="text", name="time", placeholder="sleep time", required);
+                        input(type="text", name="time", placeholder="periodic library scan sleep time", required);
                         input(type="submit", value="Update (todo)");
                     }
                 }
@@ -84,22 +93,20 @@ pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> S
                 @ for user in user_list {
                     li(class="item") {
                         div {
-                            form(accept-charset="utf-8", action="/admin/user/update", method="post") {
-                                label { : user.name }
+                            form(accept-charset="utf-8", action=format!("/admin/user/{}", &user.id), method="post") {
+                                label { : &user.name }
                                 : " ";
-                                input(type="password", name="password", placeholder="password", required);
+                                input(type="password", name="password", placeholder="password");
                                 : " ";
                                 @ if user.role == Role::Admin {
-                                    input(type="checkbox", id="admin_box", name="admin", checked)
+                                    input(type="checkbox", id="admin_box", name="is_admin", checked)
                                 } else {
-                                    input(type="checkbox", id="admin_box", name="admin")
+                                    input(type="checkbox", id="admin_box", name="is_admin")
                                 }
                                 label(for="admin_box") { : " Admin " }
-                                input(type="submit", value="Update (todo)");
-                            }
-                            : " ";
-                            form(accept-charset="utf-8", action="/admin/user/delete", method="post") {
-                                input(type="submit", value="Delete (todo)");
+                                input(type="submit", name="update", value="Update");
+                                : " ";
+                                input(type="submit", name="delete", value="Delete");
                             }
                         }
                     }
@@ -110,9 +117,9 @@ pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> S
                         : " ";
                         input(type="password", name="password", placeholder="password", required);
                         : " ";
-                        input(type="checkbox", id="admin_box", name="admin");
+                        input(type="checkbox", id="admin_box", name="is_admin");
                         label(for="admin_box") { : " Admin " }
-                        input(type="submit", value="New user (todo)");
+                        input(type="submit", value="New user");
                     }
                 }
             }

@@ -114,16 +114,52 @@ CREATE TABLE IF NOT EXISTS core (
 // TODO delete this when install page will be done
 pub async fn init_default_users() {
     let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
-    let schema = r#"
+    let default_users = r#"
 INSERT OR IGNORE INTO users(id, password_hash, name, role)
-VALUES (1,'pass123','admin','Admin'),
-       (2,'666','thas','User'),
-       (3,'666','dod','User'),
-       (4,'666','swiip','User');
+VALUES (1,'admin','admin','Admin');
     "#;
-    match sqlx::query(schema).execute(&conn).await {
+    match sqlx::query(default_users).execute(&conn).await {
         Ok(_) => info!("users successfully created"),
         Err(e) => error!("failed to create users : {}", e),
+    }
+}
+
+pub async fn create_user(user: &User, conn: &Pool<Sqlite>) {
+    match sqlx::query("INSERT OR REPLACE INTO users(password_hash, name, role) VALUES (?, ?, ?);")
+        .bind(&user.password_hash)
+        .bind(&user.name)
+        .bind(&user.role)
+        .execute(conn)
+        .await
+    {
+        Ok(_) => info!(
+            "user {} successfully created with role {:?}",
+            &user.name, &user.role
+        ),
+        Err(e) => error!("failed to create user {} : {}", &user.name, e),
+    }
+}
+pub async fn update_user(user: &User, conn: &Pool<Sqlite>) {
+    match sqlx::query("UPDATE users SET password_hash = ?, name = ?, role = ? WHERE id = ?;")
+        .bind(&user.password_hash)
+        .bind(&user.name)
+        .bind(&user.role)
+        .bind(user.id)
+        .execute(conn)
+        .await
+    {
+        Ok(_) => info!("user {} successfully updated", &user.name),
+        Err(e) => error!("failed to update user {} : {}", &user.name, e),
+    }
+}
+pub async fn delete_user(user: &User, conn: &Pool<Sqlite>) {
+    match sqlx::query("DELETE FROM users WHERE id = ?;")
+        .bind(user.id)
+        .execute(conn)
+        .await
+    {
+        Ok(_) => info!("user {} successfully deleted", &user.name),
+        Err(e) => error!("failed to delete user {} : {}", &user.name, e),
     }
 }
 
@@ -145,7 +181,7 @@ pub async fn create_library_path(library_path: Vec<String>) {
         };
         debug!("set library path : {path}");
         let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
-        // ignore UNIQUE constraint when insert here (or add a test "if exists" ?)
+        // TODO ignore UNIQUE constraint when insert here (or add a test "if exists" ?)
         match sqlx::query("INSERT OR IGNORE INTO core(name, path) VALUES (?, ?);")
             .bind(library.name)
             .bind(library.path)

@@ -3,9 +3,9 @@ use crate::reader;
 use crate::scanner::{self, DirectoryInfo, FileInfo, Library};
 use crate::sqlite;
 
-// use async_sqlx_session::SqliteSessionStore;
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::Form;
 use axum::{
     extract::Path,
     routing::{get, post},
@@ -17,6 +17,7 @@ use axum_login::{
     AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
 };
 use rand::Rng;
+use serde::Deserialize;
 use std::{
     collections::VecDeque,
     fs,
@@ -60,6 +61,7 @@ pub enum Role {
     Admin,
 }
 
+// TODO use struct, like new_user_handler()
 fn parse_credentials(body: &str) -> (String, String) {
     let parsed_body: Vec<&str> = body.split('&').collect();
     let mut username = String::new();
@@ -143,6 +145,7 @@ async fn bookmarks_handler(Extension(user): Extension<User>) -> impl IntoRespons
     Html(html_render::library(list_to_display))
 }
 
+// TODO use struct, like new_user_handler()
 async fn search_handler(Extension(user): Extension<User>, query: String) -> impl IntoResponse {
     info!("get /search : {}", &query);
     // body string is `query=search_string`, we need only the `search_string`
@@ -181,6 +184,7 @@ async fn search_handler(Extension(user): Extension<User>, query: String) -> impl
     Html(html_render::library(list_to_display))
 }
 
+// TODO use struct, like new_user_handler()
 async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse {
     info!("get /login : {}", &body);
     let (username, password) = parse_credentials(&body);
@@ -230,10 +234,10 @@ async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
 // TODO link "previous page" or folder of publication
 async fn infos_handler(
     Extension(user): Extension<User>,
-    Path(id): Path<String>,
+    Path(file_id): Path<String>,
 ) -> impl IntoResponse {
     let conn = sqlite::create_sqlite_pool().await;
-    let file = sqlite::get_files_from_file_id(&id, &conn).await;
+    let file = sqlite::get_files_from_file_id(&file_id, &conn).await;
     // path for up link
     let library_name = &file.library_name;
     let library_vec = sqlite::get_library(Some(library_name), None, &conn).await;
@@ -283,11 +287,11 @@ async fn flag_handler(
 
 async fn cover_handler(
     Extension(_user): Extension<User>,
-    Path(id): Path<String>,
+    Path(file_id): Path<String>,
 ) -> impl IntoResponse {
     let conn = sqlite::create_sqlite_pool().await;
-    let file = sqlite::get_files_from_file_id(&id, &conn).await;
-    debug!("get /cover/{}", id);
+    let file = sqlite::get_files_from_file_id(&file_id, &conn).await;
+    debug!("get /cover/{}", file_id);
     // defaut cover definition
     let default_cover = {
         let image_file_content = fs::read("src/images/green_book.svgz");
@@ -331,11 +335,11 @@ async fn cover_handler(
 // TODO filename...
 async fn download_handler(
     Extension(user): Extension<User>,
-    Path(id): Path<String>,
+    Path(file_id): Path<String>,
 ) -> impl IntoResponse {
     let conn = sqlite::create_sqlite_pool().await;
-    info!("get /download/{} : {}", &id, &user.name);
-    let file = sqlite::get_files_from_file_id(&id, &conn).await;
+    info!("get /download/{} : {}", &file_id, &user.name);
+    let file = sqlite::get_files_from_file_id(&file_id, &conn).await;
     let full_path = format!("{}/{}", file.parent_path, file.name);
     dbg!(&full_path);
     // Html(full_path).into_response()
@@ -362,11 +366,11 @@ async fn download_handler(
 // TODO return image, origin or small
 async fn comic_page_handler(
     Extension(user): Extension<User>,
-    Path((id, page, size)): Path<(String, i32, String)>,
+    Path((file_id, page, size)): Path<(String, i32, String)>,
 ) -> impl IntoResponse {
-    info!("get /reader/{} (page {}) : {}", &id, &page, &user.name);
+    info!("get /reader/{} (page {}) : {}", &file_id, &page, &user.name);
     let conn = sqlite::create_sqlite_pool().await;
-    let file = sqlite::get_files_from_file_id(&id, &conn).await;
+    let file = sqlite::get_files_from_file_id(&file_id, &conn).await;
     match reader::get_comic_page(&file, page, &size).await {
         Some(comic_board) => (
             StatusCode::OK,
@@ -380,13 +384,13 @@ async fn comic_page_handler(
 
 async fn reader_handler(
     Extension(user): Extension<User>,
-    Path((id, page)): Path<(String, i32)>,
+    Path((file_id, page)): Path<(String, i32)>,
 ) -> impl IntoResponse {
     // TODO set current page to 0 if not provided ?
     // let page: i32 = page.unwrap_or(0);
     let conn = sqlite::create_sqlite_pool().await;
-    info!("get /reader/{} (page {}) : {}", &id, &page, &user.name);
-    let file = sqlite::get_files_from_file_id(&id, &conn).await;
+    info!("get /reader/{} (page {}) : {}", &file_id, &page, &user.name);
+    let file = sqlite::get_files_from_file_id(&file_id, &conn).await;
     // total_page = 0, we need to scan it
     if file.scan_me == 1 {
         scanner::extract_all(&file, &conn).await;
@@ -471,6 +475,7 @@ async fn prefs_handler(Extension(user): Extension<User>) -> impl IntoResponse {
 }
 
 // TODO call add_library fn...
+// TODO use struct, like new_user_handler()
 async fn new_library_handler(Extension(user): Extension<User>, path: String) -> impl IntoResponse {
     // only admin
     if user.role == Role::Admin {
@@ -500,10 +505,119 @@ async fn new_library_handler(Extension(user): Extension<User>, path: String) -> 
     }
 }
 
+#[derive(Deserialize)]
+struct FormUser {
+    name: String,
+    password: String,
+    is_admin: Option<String>,
+}
+async fn new_user_handler(
+    Extension(user): Extension<User>,
+    Form(body): Form<FormUser>,
+) -> impl IntoResponse {
+    if user.role == Role::Admin {
+        // TODO check if name already exists
+        let new_user = User {
+            name: body.name,
+            password_hash: body.password,
+            role: {
+                if let Some(box_content) = body.is_admin {
+                    if box_content == "on" {
+                        Role::Admin
+                    } else {
+                        Role::User
+                    }
+                } else {
+                    Role::User
+                }
+            },
+            ..User::default()
+        };
+        let conn = sqlite::create_sqlite_pool().await;
+        sqlite::create_user(&new_user, &conn).await;
+        Html(html_render::simple_message(
+            String::from("user created"),
+            String::from("/admin"),
+        ))
+        .into_response()
+    } else {
+        Html(html_render::simple_message(
+            String::from("your are not allowed to create users"),
+            String::from("/"),
+        ))
+        .into_response()
+    }
+}
+
+#[derive(Deserialize)]
+struct FormUpdateUser {
+    password: String,
+    is_admin: Option<String>,
+    update: Option<String>,
+    delete: Option<String>,
+}
+async fn change_user_handler(
+    Extension(user): Extension<User>,
+    Path(user_id): Path<String>,
+    Form(body): Form<FormUpdateUser>,
+) -> impl IntoResponse {
+    if user.role == Role::Admin {
+        let conn = sqlite::create_sqlite_pool().await;
+        let check_user = sqlite::get_user(None, Some(&user_id), &conn).await;
+        if check_user.is_empty() {
+            Html(html_render::simple_message(
+                format!("user id {} does not exists", &user_id),
+                String::from("/admin"),
+            ))
+            .into_response()
+        } else {
+            let mut user_to_update = check_user.first().unwrap().to_owned();
+            if body.delete.is_some() && user_to_update.id != 1 {
+                sqlite::delete_user(&user_to_update, &conn).await;
+                Html(html_render::simple_message(
+                    format!("user {} deleted", &user_to_update.name),
+                    String::from("/admin"),
+                ))
+                .into_response()
+            } else if body.update.is_some() {
+                if !body.password.is_empty() {
+                    user_to_update.password_hash = body.password;
+                }
+                if let Some(is_admin) = body.is_admin {
+                    if is_admin.as_str() == "on" {
+                        user_to_update.role = Role::Admin;
+                    }
+                } else if user_to_update.id != 1 {
+                    user_to_update.role = Role::User;
+                }
+                sqlite::update_user(&user_to_update, &conn).await;
+                Html(html_render::simple_message(
+                    format!("user {} updated", &user_to_update.name),
+                    String::from("/admin"),
+                ))
+                .into_response()
+            } else {
+                Html(html_render::simple_message(
+                    String::from("you can't delete admin account"),
+                    String::from("/admin"),
+                ))
+                .into_response()
+            }
+        }
+    } else {
+        Html(html_render::simple_message(
+            String::from("your are not allowed to modify users"),
+            String::from("/"),
+        ))
+        .into_response()
+    }
+}
+
 // TODO admin only and call delete_library fn...
 async fn admin_library_handler(
     Extension(user): Extension<User>,
     Path(library_id): Path<String>,
+    // TODO use struct, like new_user_handler()
     body: String,
 ) -> impl IntoResponse {
     // only admin
@@ -762,8 +876,10 @@ async fn create_router() -> Router {
     Router::new()
         // 🔒🔒🔒 ADMIN PROTECTED 🔒🔒🔒
         .route("/admin", get(admin_handler))
-        .route("/admin/library/:id", post(admin_library_handler))
+        .route("/admin/library/:library_id", post(admin_library_handler))
         .route("/admin/library/new", post(new_library_handler))
+        .route("/admin/user/:user_id", post(change_user_handler))
+        .route("/admin/user/new", post(new_user_handler))
         // TODO does not work here, 401 despite logged as Admin...
         // without this protection, a Role::User can go to the route /admin, but a check is done in the handler
         // so it is a minor risk
@@ -776,11 +892,11 @@ async fn create_router() -> Router {
         .route("/bookmarks", get(bookmarks_handler))
         .route("/reading", get(reading_handler))
         .route("/search", post(search_handler))
-        .route("/download/:id", get(download_handler))
-        .route("/read/:id/:page", get(reader_handler))
-        .route("/comic_page/:id/:page/:size", get(comic_page_handler))
-        .route("/infos/:id", get(infos_handler))
-        .route("/cover/:id", get(cover_handler))
+        .route("/download/:file_id", get(download_handler))
+        .route("/read/:file_id/:page", get(reader_handler))
+        .route("/comic_page/:file_id/:page/:size", get(comic_page_handler))
+        .route("/infos/:file_id", get(infos_handler))
+        .route("/cover/:file_id", get(cover_handler))
         .route_layer(RequireAuth::login_with_role(Role::User..))
         // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
         .route("/", get(get_root))

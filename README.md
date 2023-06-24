@@ -1,10 +1,10 @@
 # Eloran
 
-Comics and Ebook reader written in rust.
+Comics and Ebook web library written in rust, with reading, search, reading status, bookmarks...
 
-⚠️  WORK IN PROGRESS : users and passwords are defined in [sqlite.rs](src/sqlite.rs)
+## Intro
 
-I used [Ubooquity](https://vaemendis.net/ubooquity/) since a few years, but unfortunatly it is not opensource, and there is no read status, so I decided to find another solution.
+I used [Ubooquity](https://vaemendis.net/ubooquity/) during a few years, but unfortunatly it is not opensource, and there is no read status, so I decided to find another solution.
 
 I tried some alternatives :
 - [Komga](https://komga.org) : best project here I think, but no "folder view" 😥
@@ -29,21 +29,37 @@ Feel free to use, improve, and cry to my low code quality !
 
 ## Screenshots
 
-![grid view](./doc/grid.png)
+I know this is AWFUL 🤮, I have not worked on the css yet, please be patient (or help meeeee 🆘) !
 
-![file info](./doc/info.png)
+![grid view](./doc/grid.png) ![file info](./doc/info.png) ![reading](./doc/reading.png)
 
-![reading](./doc/reading.png)
+## Installation
 
-## Build
+For now you need the `css` directory, so the simpliest way is to clone sources and build it with cargo, a usable binary and docker image will be available soon.
 
-Debian like :
 ```
-sudo apt install libarchive-dev musl-dev
+git clone https://github.com/thasos/eloran.git
+cd eloran
+just build
+target/x86_64-unknown-linux-gnu/release/eloran
 ```
+
+If you do note use [just](https://github.com/casey/just), use it 😁 or just launch `cargo build --release`
+
+### Build dependencies
+
 Arch :
 ```
-pacman -S libarchive musl
+sudo pacman -S libarchive cairo poppler-glib
+# if you want to package it in alpine image
+sudo pacman -S musl
+```
+
+Debian/ubuntu :
+```
+sudo apt install libarchive-dev libcairo2-dev libpoppler-glib-dev
+# if you want to package it in alpine image
+sudo apt install musl-dev
 ```
 
 Fedora :

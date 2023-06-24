@@ -804,6 +804,7 @@ dependencies = [
  "log",
  "poppler-rs",
  "rand",
+ "serde",
  "sqlx",
  "tokio",
  "tower",
