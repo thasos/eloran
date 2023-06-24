@@ -2,6 +2,8 @@
 
 Comics and Ebook reader written in rust.
 
+⚠️  WORK IN PROGRESS : users and passwords are defined in [sqlite.rs](src/sqlite.rs)
+
 I used [Ubooquity](https://vaemendis.net/ubooquity/) since a few years, but unfortunatly it is not opensource, and there is no read status, so I decided to find another solution.
 
 I tried some alternatives :
