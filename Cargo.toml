@@ -1,12 +1,12 @@
 [package]
 name = "eloran"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Comics and Ebook web library written in rust, with reading, search, reading status, bookmarks..."
 documentation = "https://github.com/thasos/eloran"
 repository = "https://github.com/thasos/eloran.git"
-keywords = ["monitoring"]
-categories = ["webui", "cbz", "epub", "ebook", "comics"]
+keywords = ["webui", "cbz", "epub", "ebook", "comics"]
+categories = ["multimedia"]
 license-file = "LICENSE.txt"
 readme = "README.md"
 publish = true
