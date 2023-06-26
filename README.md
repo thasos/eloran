@@ -35,6 +35,21 @@ I know this is AWFUL 🤮, I have not worked on the css yet, please be patient (
 
 ## Installation
 
+### Podman / Docker
+
+Feel free to customize listen port and path...
+
+```
+podman pull ghcr.io/thasos/eloran:latest
+podman run -d -p 0.0.0.0:3200:3200 \
+    -v /host_data/eloran/sqlite:/opt/eloran/sqlite \
+    -v /host_data/library:/library \
+    --name eloran \
+    ghcr.io/thasos/eloran:0.1.1
+```
+
+### From source
+
 For now you need the `css` directory, so the simpliest way is to clone sources and build it with cargo, a usable binary and docker image will be available soon.
 
 ```
