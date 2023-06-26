@@ -973,7 +973,7 @@ mod tests {
         // login
         let res = client
             .post("/login")
-            .body("user=admin&password=pass123")
+            .body("user=admin&password=admin")
             .send()
             .await;
         assert_eq!(res.status(), StatusCode::OK);
