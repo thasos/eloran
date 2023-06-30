@@ -186,7 +186,7 @@ async fn search_handler(Extension(user): Extension<User>, query: String) -> impl
 
 // TODO use struct, like new_user_handler()
 async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse {
-    info!("get /login : {}", &body);
+    info!("get /login");
     let (username, password) = parse_credentials(&body);
     let conn = sqlite::create_sqlite_pool().await;
     // get user from db

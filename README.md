@@ -88,6 +88,7 @@ sudo dnf install libarchive-devel.x86_64
 
 ## TODO
 
+- [ ] hash password in database !!
 - [ ] store session in database (see `fn create_router()` in [src/http_server.rs](http_server.rs))
 - [ ] pretty error handling
 - [ ] more testing
@@ -105,3 +106,5 @@ sudo dnf install libarchive-devel.x86_64
 - [ ] display read status in bookmarks page
 - [ ] better css 🤪
 - [ ] true ebook reading
+- [ ] export read status
+- [ ] list "next to read"
