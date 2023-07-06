@@ -88,6 +88,7 @@ sudo dnf install libarchive-devel.x86_64
 
 ## TODO
 
+- [ ] properly update file when modified
 - [ ] hash password in database !!
 - [ ] store session in database (see `fn create_router()` in [src/http_server.rs](http_server.rs))
 - [ ] pretty error handling

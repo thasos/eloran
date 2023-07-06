@@ -319,8 +319,9 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                                 // 1 file found, ok update it
                                 info!("file modified : {}/{}", parent_path, filename);
                                 let ulid_found = &file_found[0].id;
-                                sqlite::insert_new_file(&mut file_infos, Some(ulid_found), &conn)
-                                    .await;
+                                warn!("TODO update file");
+                                // sqlite::insert_new_file(&mut file_infos, Some(ulid_found), &conn)
+                                // .await;
                             } else {
                                 // multiple id for a file ? wrong !!
                                 // TODO propose repair or full rescan
