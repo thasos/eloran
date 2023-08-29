@@ -268,7 +268,7 @@ dependencies = [
 [[package]]
 name = "axum-login"
 version = "0.6.0"
-source = "git+https://github.com/maxcountryman/axum-login?branch=main#bb7e5d32100bb6846412cee1f26851cc47397991"
+source = "git+https://github.com/maxcountryman/axum-login?rev=bb7e5d32100bb6846412cee1f26851cc47397991#bb7e5d32100bb6846412cee1f26851cc47397991"
 dependencies = [
  "async-trait",
  "axum",

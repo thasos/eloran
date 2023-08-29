@@ -16,7 +16,7 @@ axum = { version = "0.6", features = ["macros"] }
 # TODO upgrade axum-login when PR#91 will be merged (0.7 ?)
 # see https://github.com/maxcountryman/axum-login/pull/91
 # axum-login = { version = "0.6", features = ["sqlite"] }
-axum-login = { git = "https://github.com/maxcountryman/axum-login", branch = "main", features = ["sqlite"] }
+axum-login = { git = "https://github.com/maxcountryman/axum-login", rev = "bb7e5d32100bb6846412cee1f26851cc47397991", features = ["sqlite"] }
 horrorshow = "0.8.4"
 http = "0.2.8"
 body = "0.1.1"
