@@ -38,9 +38,9 @@ pub struct User {
     pub name: String,
     pub role: Role,
 }
-impl AuthUser<Role> for User {
-    fn get_id(&self) -> String {
-        format!("{}", self.id)
+impl AuthUser<i64, Role> for User {
+    fn get_id(&self) -> i64 {
+        self.id
     }
     fn get_password_hash(&self) -> SecretVec<u8> {
         SecretVec::new(self.password_hash.clone().into())
@@ -50,8 +50,8 @@ impl AuthUser<Role> for User {
     }
 }
 
-type AuthContext = axum_login::extractors::AuthContext<User, SqliteStore<User, Role>, Role>;
-type RequireAuth = RequireAuthorizationLayer<User, Role>;
+type AuthContext = axum_login::extractors::AuthContext<i64, User, SqliteStore<User, Role>, Role>;
+type RequireAuth = RequireAuthorizationLayer<i64, User, Role>;
 
 /// Roles
 #[derive(Debug, Clone, PartialEq, PartialOrd, sqlx::Type, Default)]
@@ -786,12 +786,9 @@ async fn library_handler(
     Html(html_render::library(list_to_display))
 }
 
-async fn get_root(Extension(user): Extension<Option<User>>) -> impl IntoResponse {
-    match &user {
-        Some(u) => info!("get / : as {}", u.name),
-        None => info!("get /"),
-    }
-    match user {
+// async fn get_root(Extension(user): Extension<User>) -> impl IntoResponse {
+async fn get_root(auth: AuthContext) -> impl IntoResponse {
+    match auth.current_user {
         Some(user) => {
             debug!("user found");
             Html(html_render::homepage(&user))
