@@ -1,6 +1,6 @@
 [package]
 name = "eloran"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Comics and Ebook web library written in rust, with reading, search, reading status, bookmarks..."
 documentation = "https://github.com/thasos/eloran"

@@ -10,5 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2023-??-??
 - end of beta
 
-## [0.1.0] - 2023-??-??
-- publication
+## [0.1.2] - 2023-08-31
+- upgrade dependencies (sqlx, axum-login), fixing some CVEs
+
+## [0.1.1] - 2023-07-24
+- first "usable" release with base library scanning, comic / ebook reader, user management...
+
+## [0.1.0] - 2023-07-24
+- init
