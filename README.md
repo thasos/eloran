@@ -63,6 +63,11 @@ If you do note use [just](https://github.com/casey/just), use it 😁 or just la
 
 ### Build dependencies
 
+Nix :
+```
+nix-shell shell.nix
+```
+
 Arch :
 ```
 sudo pacman -S libarchive cairo poppler-glib
