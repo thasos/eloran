@@ -127,3 +127,22 @@ pub async fn epub(file: &FileInfo, page: i32) -> String {
     }
     reader
 }
+
+// // TODO create a non empty file for testing
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     #[tokio::test]
+//     async fn test_get_comic_page() {
+//         let file = FileInfo::default();
+//         let page: i32 = 10;
+//         let size = "123456";
+//         insta::assert_yaml_snapshot!(get_comic_page(&file, page, size).await)
+//     }
+//     #[tokio::test]
+//     async fn test_epub() {
+//         let file = FileInfo::default();
+//         let page: i32 = 10;
+//         insta::assert_yaml_snapshot!(epub(&file, page).await)
+//     }
+// }

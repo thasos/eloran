@@ -1,7 +1,9 @@
 use clap::{arg, ArgAction, ArgMatches, Command};
 use config::Config;
+use serde::Serialize;
 use std::env;
 
+#[derive(Serialize)]
 pub struct Conf {
     pub bind: String,
     pub library_path: Option<Vec<String>>,
@@ -63,16 +65,12 @@ pub fn init_conf() -> Conf {
                 .add_source(config::File::with_name(&config_file_path))
                 .build()
             {
-                // TODO get_string to get_array
                 if let Ok(library_path_from_conf) = settings.get_array("library_path") {
-                    let toto: Vec<String> = library_path_from_conf
+                    let library_path_list: Vec<String> = library_path_from_conf
                         .iter()
                         .map(|v| v.to_string().trim_end_matches('/').to_string())
                         .collect();
-                    // TODO do a trim_end_matches (see above)
-                    // delete last char if it's `/`
-                    // Some(vec![library_path_from_conf])
-                    Some(toto)
+                    Some(library_path_list)
                 } else {
                     warn!("unable to get library_path from command line");
                     None
@@ -136,4 +134,13 @@ pub fn clap_args(_version: Option<&str>) -> ArgMatches {
                 .action(ArgAction::SetTrue),
         )
         .get_matches()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_conf() {
+        insta::assert_yaml_snapshot!(init_conf())
+    }
 }

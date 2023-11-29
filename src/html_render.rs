@@ -227,6 +227,7 @@ pub fn file_info(
 
 pub fn flag_toggle(user: &User, flag_status: bool, file_id: &str, flag: &str) -> String {
     let menu = menu(user.to_owned(), None);
+    // TODO create enum for flag...
     let flag_response = match flag {
         "bookmark" => {
             if flag_status {
@@ -341,6 +342,7 @@ pub struct LibraryDisplay {
     // TODO need search query option string
 }
 
+// TODO rename fn...
 pub fn library(list_to_display: LibraryDisplay) -> String {
     // we dispose of following variables :
     // - directory.name : Subdir2
@@ -491,5 +493,114 @@ fn render(body_content: Box<dyn horrorshow::RenderBox>, redirect_url: Option<&st
         Ok(page) => page,
         // TODO true Error page (should not happen)
         Err(_) => "KO".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_headers() {
+        let redirect_url = "tests";
+        // TODO WTF ?
+        let rendered_headers = render(header(Some(&redirect_url)), Some(&redirect_url));
+        insta::assert_yaml_snapshot!(rendered_headers)
+    }
+    #[test]
+    fn test_simple_message() {
+        insta::assert_yaml_snapshot!(simple_message(String::from("simple"), String::from("test")))
+    }
+    #[test]
+    fn test_prefs() {
+        let user = User::default();
+        insta::assert_yaml_snapshot!(prefs(&user))
+    }
+    #[test]
+    fn test_admin() {
+        let user = User::default();
+        let library_list = Vec::with_capacity(0);
+        let user_list = Vec::with_capacity(0);
+        insta::assert_yaml_snapshot!(admin(&user, library_list, user_list))
+    }
+    #[test]
+    fn test_login_form() {
+        insta::assert_yaml_snapshot!(login_form())
+    }
+    #[test]
+    fn test_login_ok() {
+        let user = User::default();
+        insta::assert_yaml_snapshot!(login_ok(&user))
+    }
+    #[test]
+    fn test_logout() {
+        let user = User::default();
+        insta::assert_yaml_snapshot!(logout(&user))
+    }
+    #[test]
+    fn test_file_info() {
+        let user = User::default();
+        let file = FileInfo::default();
+        let current_page: i32 = 2;
+        let bookmark_status = false;
+        let read_status = true;
+        let up_link = String::from("some/up/link");
+        insta::assert_yaml_snapshot!(file_info(
+            &user,
+            &file,
+            current_page,
+            bookmark_status,
+            read_status,
+            up_link
+        ))
+    }
+    #[test]
+    fn test_flag_toggle() {
+        let user = User::default();
+        let flag_status = true;
+        let file_id = "blabla";
+        let flag = "read_status";
+        insta::assert_yaml_snapshot!(flag_toggle(&user, flag_status, file_id, flag))
+    }
+    #[test]
+    fn test_comic_reader() {
+        let user = User::default();
+        let file = FileInfo::default();
+        let page: i32 = 10;
+        insta::assert_yaml_snapshot!(comic_reader(&user, &file, page))
+    }
+    #[test]
+    fn test_ebook_reader() {
+        let user = User::default();
+        let file = FileInfo::default();
+        let epub_content = "Lorem ipsum dolor sit amet";
+        let page: i32 = 10;
+        insta::assert_yaml_snapshot!(ebook_reader(&user, &file, epub_content, page))
+    }
+    #[test]
+    fn test_library() {
+        let list_to_display = LibraryDisplay {
+            user: User::default(),
+            directories_list: Vec::with_capacity(0),
+            files_list: Vec::with_capacity(0),
+            library_path: String::from("some/path"),
+            current_path: None,
+            search_query: None,
+        };
+        insta::assert_yaml_snapshot!(library(list_to_display))
+    }
+    #[test]
+    fn test_menu() {
+        let user = User::default();
+        let search_query = String::from("searching");
+        let redirect_url = "tests";
+        let menu = menu(user, Some(search_query));
+        let rendered_menu = render(menu, Some(redirect_url));
+        insta::assert_yaml_snapshot!(rendered_menu)
+    }
+    #[test]
+    fn test_homepage() {
+        let user = User::default();
+        insta::assert_yaml_snapshot!(homepage(&user))
     }
 }

@@ -9,7 +9,6 @@ mod sqlite;
 extern crate log;
 #[macro_use]
 extern crate horrorshow;
-use std::io::Error;
 use std::time::Duration;
 
 use crate::conf::init_conf;
@@ -17,12 +16,12 @@ use crate::conf::init_conf;
 const DB_URL: &str = "sqlite://sqlite/eloran.db";
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), String> {
     // conf
     let conf: conf::Conf = init_conf();
 
     // databases
-    sqlite::init_database().await;
+    sqlite::init_database().await?;
     // TODO remove dbg users when install page is done
     sqlite::init_default_users().await;
     if conf.library_path.is_some() {

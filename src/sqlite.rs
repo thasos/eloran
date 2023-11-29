@@ -6,27 +6,28 @@ use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use sqlx::{pool::Pool, Row};
 use std::fs;
 use std::path::Path;
-use std::process;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ulid::Ulid;
 
-pub async fn create_sqlite_pool() -> Pool<Sqlite> {
+pub async fn create_sqlite_pool() -> Result<Pool<Sqlite>, String> {
     match SqlitePoolOptions::new()
         .max_lifetime(Duration::from_secs(30))
         .idle_timeout(Duration::from_secs(5))
         .connect(crate::DB_URL)
         .await
     {
-        Ok(pool) => pool,
+        Ok(pool) => Ok(pool),
         Err(e) => {
-            error!("can't create pool connection : {e}");
-            process::exit(255);
+            let msg = format!("can't create pool connection : {e}");
+            error!("{msg}");
+            Err(msg)
         }
     }
 }
 
-pub async fn init_database() {
+pub async fn init_database() -> Result<(), String> {
     // create sqlite directory if needed
+    // TODO conflicts with DB_URL...
     let database_path = Path::new("sqlite");
     if !database_path.is_dir() {
         match fs::create_dir(database_path) {
@@ -46,9 +47,16 @@ pub async fn init_database() {
     {
         info!("creating database {}", crate::DB_URL);
         match Sqlite::create_database(crate::DB_URL).await {
-            Ok(_) => info!("database successfully created"),
-            Err(e) => error!("failed to create database {} : {}", crate::DB_URL, e),
-        }
+            Ok(_) => {
+                info!("database successfully created");
+                Ok(())
+            }
+            Err(e) => {
+                let msg = format!("failed to create database {} : {}", crate::DB_URL, e);
+                error!("{msg}");
+                Err(msg)
+            }
+        }?
     } else {
         info!("database exists");
     }
@@ -58,7 +66,10 @@ pub async fn init_database() {
     // https://docs.rs/sqlx/0.6.2/sqlx/pool/struct.PoolOptions.html#method.after_connect
     // ou `create_if_missing`
     // https://github.com/launchbadge/sqlx/issues/1114
-    let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
+    let conn = match SqlitePool::connect(crate::DB_URL).await {
+        Ok(conn) => Ok(conn),
+        Err(e) => Err(format!("unable to connect to database : {e}")),
+    }?;
     let schema = r#"
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY NOT NULL,
@@ -105,10 +116,18 @@ CREATE TABLE IF NOT EXISTS core (
 );
     "#;
     match sqlx::query(schema).execute(&conn).await {
-        Ok(_) => info!("tables successfully created"),
-        Err(e) => error!("failed to create tables : {}", e),
-    };
+        Ok(_) => {
+            info!("tables successfully created");
+            Ok(())
+        }
+        Err(e) => {
+            let msg = format!("failed to create tables : {e}");
+            error!("{msg}");
+            Err(msg)
+        }
+    }?;
     conn.close().await;
+    Ok(())
 }
 
 // TODO delete this when install page will be done
@@ -298,19 +317,19 @@ pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileI
 }
 
 /// get FileInfo from file id
-pub async fn get_files_from_file_id(file_id: &str, conn: &Pool<Sqlite>) -> FileInfo {
-    let file: FileInfo = match sqlx::query_as("SELECT * FROM files WHERE id = ?;")
+pub async fn get_files_from_file_id(file_id: &str, conn: &Pool<Sqlite>) -> Option<FileInfo> {
+    let file: Option<FileInfo> = match sqlx::query_as("SELECT * FROM files WHERE id = ?;")
         .bind(file_id)
         .fetch_one(conn)
         .await
     {
-        Ok(file_found) => file_found,
+        Ok(file_found) => Some(file_found),
         Err(e) => {
             error!(
                 "unable to retrieve file infos from id from database : {}",
                 e
             );
-            FileInfo::new()
+            None
         }
     };
     file
