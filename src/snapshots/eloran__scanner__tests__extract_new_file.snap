@@ -1,0 +1,15 @@
+---
+source: src/scanner.rs
+expression: validation_file
+---
+id: "666"
+name: T01 - Asterix le Gaulois.pdf
+library_name: library
+parent_path: library_new_file/Asterix
+scan_me: 1
+added_date: "[added_date]"
+format: pdf
+size: 10
+total_pages: 0
+read_by: ""
+bookmarked_by: ""

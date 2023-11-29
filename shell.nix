@@ -8,12 +8,14 @@
       rustup
       rust-analyzer
       clippy
-      # pour eloran
+      cargo-insta
+      # for eloran
       pkg-config
       glib
       cairo
       poppler
       libarchive
+      sqlite
     ];
     PKG_CONFIG_PATH = "${pkgs.glib.dev}/lib/pkgconfig:${pkgs.cairo.dev}/lib/pkgconfig:${pkgs.poppler.dev}/lib/pkgconfig:${pkgs.libarchive.dev}/lib/pkgconfig";
     RUSTC_VERSION = "1.75.0";

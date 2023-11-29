@@ -1,0 +1,6 @@
+---
+source: src/conf.rs
+expression: init_conf()
+---
+bind: "0.0.0.0:3200"
+library_path: ~

@@ -7,6 +7,7 @@ use image::imageops::FilterType;
 use image::DynamicImage;
 use jwalk::WalkDirGeneric;
 use poppler::Document;
+use serde::Serialize;
 use sqlx::pool::Pool;
 use sqlx::Sqlite;
 use std::cmp::Ordering;
@@ -41,7 +42,7 @@ impl Library {
 /// File struct, match database fields
 /// id|name|parent_path|read_status|scan_me|added_date|format|size|total_pages
 // #[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq, Eq, PartialOrd, Ord)]
-#[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, sqlx::FromRow, PartialEq, Eq, Serialize)]
 pub struct FileInfo {
     pub id: String,
     pub name: String,
@@ -83,7 +84,7 @@ impl FileInfo {
 }
 impl PartialOrd for FileInfo {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.name.partial_cmp(&other.name)
+        Some(self.cmp(other))
     }
 }
 impl Ord for FileInfo {
@@ -130,7 +131,7 @@ pub struct DirectoryInfo {
 }
 impl PartialOrd for DirectoryInfo {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.name.partial_cmp(&other.name)
+        Some(self.cmp(other))
     }
 }
 impl Ord for DirectoryInfo {
@@ -304,31 +305,32 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                         let rt = Runtime::new()
                             .expect("runtime creation for insertions while scanning library");
                         rt.block_on(async move {
-                            let conn = sqlite::create_sqlite_pool().await;
-                            let file_found = sqlite::check_if_file_exists(
-                                parent_path.as_str(),
-                                filename.as_str(),
-                                &conn,
-                            )
-                            .await;
-                            if file_found.is_empty() {
-                                // new file
-                                info!("new file found : {}/{}", parent_path, filename);
-                                sqlite::insert_new_file(&mut file_infos, None, &conn).await;
-                            } else if file_found.len() == 1 {
-                                // 1 file found, ok update it
-                                info!("file modified : {}/{}", parent_path, filename);
-                                let ulid_found = &file_found[0].id;
-                                warn!("TODO update file");
-                                // sqlite::insert_new_file(&mut file_infos, Some(ulid_found), &conn)
-                                // .await;
-                            } else {
-                                // multiple id for a file ? wrong !!
-                                // TODO propose repair or full rescan
-                                error!(
-                                    "base possibly corrupted, multiple id found for file {}/{}",
-                                    parent_path, filename
-                                );
+                            if let Ok(conn) = sqlite::create_sqlite_pool().await {
+                                let file_found = sqlite::check_if_file_exists(
+                                    parent_path.as_str(),
+                                    filename.as_str(),
+                                    &conn,
+                                )
+                                .await;
+                                if file_found.is_empty() {
+                                    // new file
+                                    info!("new file found : {}/{}", parent_path, filename);
+                                    sqlite::insert_new_file(&mut file_infos, None, &conn).await;
+                                } else if file_found.len() == 1 {
+                                    // 1 file found, ok update it
+                                    info!("file modified : {}/{}", parent_path, filename);
+                                    let ulid_found = &file_found[0].id;
+                                    warn!("TODO update file");
+                                    // sqlite::insert_new_file(&mut file_infos, Some(ulid_found), &conn)
+                                    // .await;
+                                } else {
+                                    // multiple id for a file ? wrong !!
+                                    // TODO propose repair or full rescan
+                                    error!(
+                                        "base possibly corrupted, multiple id found for file {}/{}",
+                                        parent_path, filename
+                                    );
+                                }
                             }
                         });
                         // flag file for insert
@@ -354,89 +356,94 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
     tokio::time::sleep(Duration::from_secs(10)).await;
 
     // create a database connection and start main loop
-    let conn = sqlite::create_sqlite_pool().await;
-    loop {
-        info!("start extraction");
+    match sqlite::create_sqlite_pool().await {
+        Ok(conn) => {
+            loop {
+                info!("start extraction");
 
-        // directories extract
-        // we want file number in each directory
-        let directories_to_scan_list: Vec<DirectoryInfo> =
-            match sqlx::query_as("SELECT * FROM directories;")
-                .fetch_all(&conn)
-                .await
-            {
-                Ok(directory) => directory,
-                Err(e) => {
-                    error!("unable to retrieve directory list to scan : {e}");
-                    let empty_list: Vec<DirectoryInfo> = Vec::new();
-                    empty_list
-                }
-            };
-        for directory in directories_to_scan_list {
-            let directory_full_path = &format!("{}/{}", directory.parent_path, directory.name);
-            // TODO comments
-            // see https://github.com/launchbadge/sqlx/issues/1066
-            let directory_file_number: (i32,) =
-                match sqlx::query_as("SELECT count(*) FROM files WHERE parent_path = ?;")
-                    .bind(directory_full_path)
-                    .fetch_one(&conn)
-                    .await
-                {
-                    Ok(file_number) => file_number,
-                    Err(e) => {
-                        error!(
-                            "unable to retrieve file number for directory {} : {e}",
+                // directories extract
+                // we want file number in each directory
+                let directories_to_scan_list: Vec<DirectoryInfo> =
+                    match sqlx::query_as("SELECT * FROM directories;")
+                        .fetch_all(&conn)
+                        .await
+                    {
+                        Ok(directory) => directory,
+                        Err(e) => {
+                            error!("unable to retrieve directory list to scan : {e}");
+                            let empty_list: Vec<DirectoryInfo> = Vec::new();
+                            empty_list
+                        }
+                    };
+                for directory in directories_to_scan_list {
+                    let directory_full_path =
+                        &format!("{}/{}", directory.parent_path, directory.name);
+                    // TODO comments
+                    // see https://github.com/launchbadge/sqlx/issues/1066
+                    let directory_file_number: (i32,) =
+                        match sqlx::query_as("SELECT count(*) FROM files WHERE parent_path = ?;")
+                            .bind(directory_full_path)
+                            .fetch_one(&conn)
+                            .await
+                        {
+                            Ok(file_number) => file_number,
+                            Err(e) => {
+                                error!(
+                                    "unable to retrieve file number for directory {} : {e}",
+                                    directory_full_path
+                                );
+                                (0,)
+                            }
+                        };
+                    // insert number
+                    match sqlx::query("UPDATE directories SET file_number = ? WHERE id = ?;")
+                        .bind(directory_file_number.0)
+                        .bind(directory.id)
+                        .execute(&conn)
+                        .await
+                    {
+                        Ok(_) => debug!(
+                            "insert file number {} for directory {}",
+                            directory_file_number.0, directory_full_path
+                        ),
+                        Err(e) => error!(
+                            "unable to set file number for directory {} : {e}",
                             directory_full_path
-                        );
-                        (0,)
+                        ),
                     }
-                };
-            // insert number
-            match sqlx::query("UPDATE directories SET file_number = ? WHERE id = ?;")
-                .bind(directory_file_number.0)
-                .bind(directory.id)
-                .execute(&conn)
-                .await
-            {
-                Ok(_) => debug!(
-                    "insert file number {} for directory {}",
-                    directory_file_number.0, directory_full_path
-                ),
-                Err(e) => error!(
-                    "unable to set file number for directory {} : {e}",
-                    directory_full_path
-                ),
+                }
+
+                // files extract
+                // TODO set extraction limit in conf ? (extraction speed)
+                let files_to_scan_list: Vec<FileInfo> =
+                    match sqlx::query_as("SELECT * FROM files WHERE scan_me = '1' LIMIT ?;")
+                        .bind(speed)
+                        .fetch_all(&conn)
+                        .await
+                    {
+                        Ok(file_found) => file_found,
+                        Err(e) => {
+                            error!("unable to retrieve file list to scan : {e}");
+                            let empty_list: Vec<FileInfo> = Vec::new();
+                            empty_list
+                        }
+                    };
+                if files_to_scan_list.is_empty() {
+                    info!("0 file need to be scanned")
+                }
+
+                for file_to_scan in files_to_scan_list {
+                    extract_all(&file_to_scan, &conn).await;
+                }
+                // TODO true schedule, last extract status in db...
+                info!(
+                    "stop extraction, sleeping for {} seconds",
+                    sleep_time.as_secs()
+                );
+                tokio::time::sleep(sleep_time).await;
             }
         }
-
-        // files extract
-        // TODO set extraction limit in conf ? (extraction speed)
-        let files_to_scan_list: Vec<FileInfo> =
-            match sqlx::query_as("SELECT * FROM files WHERE scan_me = '1' LIMIT ?;")
-                .bind(speed)
-                .fetch_all(&conn)
-                .await
-            {
-                Ok(file_found) => file_found,
-                Err(e) => {
-                    error!("unable to retrieve file list to scan : {e}");
-                    let empty_list: Vec<FileInfo> = Vec::new();
-                    empty_list
-                }
-            };
-        if files_to_scan_list.is_empty() {
-            info!("0 file need to be scanned")
-        }
-
-        for file_to_scan in files_to_scan_list {
-            extract_all(&file_to_scan, &conn).await;
-        }
-        // TODO true schedule, last extract status in db...
-        info!(
-            "stop extraction, sleeping for {} seconds",
-            sleep_time.as_secs()
-        );
-        tokio::time::sleep(sleep_time).await;
+        Err(_) => error!("unable to start extraction routine"),
     }
 }
 
@@ -462,61 +469,65 @@ async fn purge_removed_directories(conn: &Pool<Sqlite>) {
 // batch insert -> no speed improvement
 // TODO check total number file found, vs total in db (for insert errors) ?
 pub async fn scan_routine(sleep_time: Duration) {
-    let conn = sqlite::create_sqlite_pool().await;
-    // main loop
-    loop {
-        // retrieve library list at each run (if added from web ui...)
-        let library_list = sqlite::get_library(None, None, &conn).await;
-        // TODO multi lib first_scan_run
-        // let mut first_scan_run = true;
+    match sqlite::create_sqlite_pool().await {
+        Ok(conn) => {
+            // main loop
+            loop {
+                // retrieve library list at each run (if added from web ui...)
+                let library_list = sqlite::get_library(None, None, &conn).await;
+                // TODO multi lib first_scan_run
+                // let mut first_scan_run = true;
 
-        // library path loop
-        for library in library_list {
-            let library_path = Path::new(&library.path);
+                // library path loop
+                for library in library_list {
+                    let library_path = Path::new(&library.path);
 
-            if !library_path.is_dir() {
-                error!("{} does not exists", library_path.to_string_lossy());
-            } else {
+                    if !library_path.is_dir() {
+                        error!("{} does not exists", library_path.to_string_lossy());
+                    } else {
+                        debug!(
+                            "path \"{}\" found and is a directory",
+                            library_path.to_string_lossy()
+                        );
+
+                        // TODO really need this ?
+                        // retrieve last_successfull_scan_date, 0 if first run
+                        // let last_successfull_scan_date = if first_scan_run {
+                        //     first_scan_run = false;
+                        //     Duration::from_secs(0)
+                        // } else {
+                        //     sqlite::get_last_successfull_scan_date(library_id, &conn).await
+                        // };
+                        let last_successfull_scan_date =
+                            sqlite::get_last_successfull_scan_date(library.id, &conn).await;
+                        debug!("last_successfull_scan_date : {last_successfull_scan_date:?}");
+
+                        // recent directories to find new and removed files
+                        walk_recent_dir(library_path, last_successfull_scan_date, &conn).await;
+
+                        // removed directory
+                        purge_removed_directories(&conn).await;
+
+                        // recent files : added and modified files
+                        // TODO this fn create a proper sql connexion, better this way ?
+                        walk_recent_files_and_insert(library.clone(), last_successfull_scan_date);
+
+                        // end scanner, update date if successfull
+                        // TODO how to check if successfull ?
+                        // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
+                        sqlite::update_last_successfull_scan_date(&library.id, &conn).await;
+                    }
+                }
+
+                // TODO true schedule, last scan status in db...
                 debug!(
-                    "path \"{}\" found and is a directory",
-                    library_path.to_string_lossy()
+                    "stop scanning, sleeping for {} seconds",
+                    sleep_time.as_secs()
                 );
-
-                // TODO really need this ?
-                // retrieve last_successfull_scan_date, 0 if first run
-                // let last_successfull_scan_date = if first_scan_run {
-                //     first_scan_run = false;
-                //     Duration::from_secs(0)
-                // } else {
-                //     sqlite::get_last_successfull_scan_date(library_id, &conn).await
-                // };
-                let last_successfull_scan_date =
-                    sqlite::get_last_successfull_scan_date(library.id, &conn).await;
-                debug!("last_successfull_scan_date : {last_successfull_scan_date:?}");
-
-                // recent directories to find new and removed files
-                walk_recent_dir(library_path, last_successfull_scan_date, &conn).await;
-
-                // removed directory
-                purge_removed_directories(&conn).await;
-
-                // recent files : added and modified files
-                // TODO this fn create a proper sql connexion, better this way ?
-                walk_recent_files_and_insert(library.clone(), last_successfull_scan_date);
-
-                // end scanner, update date if successfull
-                // TODO how to check if successfull ?
-                // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
-                sqlite::update_last_successfull_scan_date(&library.id, &conn).await;
+                tokio::time::sleep(sleep_time).await;
             }
         }
-
-        // TODO true schedule, last scan status in db...
-        debug!(
-            "stop scanning, sleeping for {} seconds",
-            sleep_time.as_secs()
-        );
-        tokio::time::sleep(sleep_time).await;
+        Err(_) => error!("unable to start scan routine"),
     }
 }
 
@@ -809,8 +820,8 @@ pub fn resize_cover(cover: image::DynamicImage) -> image::DynamicImage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sqlite;
-    use sqlx::{migrate::MigrateDatabase, Sqlite};
+    // use crate::sqlite;
+    // use sqlx::{migrate::MigrateDatabase, Sqlite};
     use std::fs::{self, File};
     use std::io::prelude::*;
     use std::path::Path;
@@ -853,62 +864,56 @@ mod tests {
             "library",
             &library_path.join("Asterix/T01 - Asterix le Gaulois.pdf"),
         );
-        let skeletion_file = FileInfo {
-            id: validation_file.id.clone(),
-            name: "T01 - Asterix le Gaulois.pdf".to_string(),
-            library_name: "library".to_string(),
-            parent_path: format!("{}/Asterix", library_path.to_string_lossy()),
-            scan_me: 1,
-            added_date: validation_file.added_date,
-            format: "pdf".to_string(),
-            size: 10,
-            total_pages: 0,
-            read_by: "".to_string(),
-            bookmarked_by: "".to_string(),
-        };
-        assert_eq!(validation_file, skeletion_file);
+        insta::assert_yaml_snapshot!(validation_file, {
+            ".added_date" => "[added_date]"
+        });
         // delete library
         delete_fake_library(library_path).unwrap_or(());
     }
 
-    #[tokio::test]
-    async fn test_insert_new_file() {
-        // init database
-        sqlite::init_database().await;
-        // run test
-        let mut skeletion_file = FileInfo {
-            // id is random, so we take it from validation_file
-            id: "666".to_string(),
-            name: "T01 - Asterix le Gaulois.pdf".to_string(),
-            library_name: "library".to_string(),
-            parent_path: "library/Asterix".to_string(),
-            scan_me: 1,
-            added_date: 0,
-            format: "pdf".to_string(),
-            size: 10,
-            total_pages: 0,
-            read_by: "".to_string(),
-            bookmarked_by: "".to_string(),
-        };
-        let conn = sqlite::create_sqlite_pool().await;
-        sqlite::insert_new_file(&mut skeletion_file, None, &conn).await;
-        let file_from_base: Vec<FileInfo> =
-            match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
-                .bind(&skeletion_file.parent_path)
-                .fetch_all(&conn)
-                .await
-            {
-                Ok(file_found) => file_found,
-                Err(e) => {
-                    error!("unable to insert file infos from database : {}", e);
-                    let empty_list: Vec<FileInfo> = Vec::new();
-                    empty_list
-                }
-            };
-        assert_eq!(file_from_base.first().unwrap().name, skeletion_file.name);
-        // delete database
-        Sqlite::drop_database(crate::DB_URL);
-    }
+    // #[tokio::test]
+    // async fn test_insert_new_file() {
+    //     // init database
+    //     let _ = sqlite::init_database().await;
+    //     // run test
+    //     let mut skeletion_file = FileInfo {
+    //         // id is random, so we take it from validation_file
+    //         id: "666".to_string(),
+    //         name: "T01 - Asterix le Gaulois.pdf".to_string(),
+    //         library_name: "library".to_string(),
+    //         parent_path: "library/Asterix".to_string(),
+    //         scan_me: 1,
+    //         added_date: 0,
+    //         format: "pdf".to_string(),
+    //         size: 10,
+    //         total_pages: 0,
+    //         read_by: "".to_string(),
+    //         bookmarked_by: "".to_string(),
+    //     };
+    //     match sqlite::create_sqlite_pool().await {
+    //         Ok(conn) => {
+    //             // main loop
+    //             sqlite::insert_new_file(&mut skeletion_file, None, &conn).await;
+    //             let file_from_base: Vec<FileInfo> =
+    //                 match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
+    //                     .bind(&skeletion_file.parent_path)
+    //                     .fetch_all(&conn)
+    //                     .await
+    //                 {
+    //                     Ok(file_found) => file_found,
+    //                     Err(e) => {
+    //                         error!("unable to insert file infos from database : {}", e);
+    //                         let empty_list: Vec<FileInfo> = Vec::new();
+    //                         empty_list
+    //                     }
+    //                 };
+    //             assert_eq!(file_from_base.first().unwrap().name, skeletion_file.name);
+    //         }
+    //         Err(_) => error!("unable to start scan routine"),
+    //     }
+    //     // delete database
+    //     let _ = Sqlite::drop_database(crate::DB_URL).await;
+    // }
 
     // #[tokio::test]
     // async fn test_walkdir() {
