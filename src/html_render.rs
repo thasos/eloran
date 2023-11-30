@@ -10,7 +10,6 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
         meta(name="viewport", content="width=device-width");
         link(rel="stylesheet", href="/css/eloran.css");
         link(rel="stylesheet", href="/css/w3.css");
-        link(rel="stylesheet", href="/css/w3-theme-dark-grey.css");
         meta(http-equiv="Cache-Control", content="no-cache, no-store, must-revalidate");
         meta(http-equiv="Pragma", content="no-cache");
         meta(http-equiv="Expires", content="0");
