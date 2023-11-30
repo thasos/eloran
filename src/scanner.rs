@@ -303,47 +303,54 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                         // create a new tokio runtime for inserts
                         // we need it to use async fns create_sqlite_pool and insert_new_file
                         // TODO create one conn for each insert ? not sure if it's realy optimal...
-                        let rt = Runtime::new()
-                            .expect("runtime creation for insertions while scanning library");
-                        rt.block_on(async move {
-                            if let Ok(conn) = sqlite::create_sqlite_pool().await {
-                                // check if file alrdeady exists in database
-                                let file_found = sqlite::check_if_file_exists(
-                                    parent_path.as_str(),
-                                    filename.as_str(),
-                                    &conn,
-                                )
-                                .await;
-                                if file_found.is_empty() {
-                                    // new file
-                                    info!("new file found : {}/{}", parent_path, filename);
-                                    sqlite::insert_new_file(&mut file_infos, None, &conn).await;
-                                } else if file_found.len() == 1 {
-                                    // 1 file found, ok update it
-                                    info!("file modified : {}/{}", parent_path, filename);
-                                    let ulid_found = &file_found[0].id;
-                                    // we dont want to loose flags
-                                    file_infos.bookmarked_by = file_found[0].bookmarked_by.clone();
-                                    file_infos.read_by = file_found[0].read_by.clone();
-                                    // insert with up to date values
-                                    sqlite::insert_new_file(
-                                        &mut file_infos,
-                                        Some(ulid_found),
-                                        &conn,
-                                    )
-                                    .await;
-                                } else {
-                                    // multiple id for a file ? should not happen !
-                                    // TODO propose repair or full rescan
-                                    error!(
+                        match Runtime::new() {
+                            Ok(rt) => {
+                                rt.block_on(async move {
+                                    if let Ok(conn) = sqlite::create_sqlite_pool().await {
+                                        // check if file alrdeady exists in database
+                                        let file_found = sqlite::check_if_file_exists(
+                                            parent_path.as_str(),
+                                            filename.as_str(),
+                                            &conn,
+                                        )
+                                        .await;
+                                        if file_found.is_empty() {
+                                            // new file
+                                            info!("new file found : {}/{}", parent_path, filename);
+                                            sqlite::insert_new_file(&mut file_infos, None, &conn)
+                                                .await;
+                                        } else if file_found.len() == 1 {
+                                            // 1 file found, ok update it
+                                            info!("file modified : {}/{}", parent_path, filename);
+                                            let ulid_found = &file_found[0].id;
+                                            // we dont want to loose flags
+                                            file_infos.bookmarked_by =
+                                                file_found[0].bookmarked_by.clone();
+                                            file_infos.read_by = file_found[0].read_by.clone();
+                                            // insert with up to date values
+                                            sqlite::insert_new_file(
+                                                &mut file_infos,
+                                                Some(ulid_found),
+                                                &conn,
+                                            )
+                                            .await;
+                                        } else {
+                                            // multiple id for a file ? should not happen !
+                                            // TODO propose repair or full rescan
+                                            error!(
                                         "base possibly corrupted, multiple id found for file {}/{}",
                                         parent_path, filename
                                     );
-                                }
+                                        }
+                                    }
+                                });
+                                // flag file for insert
+                                file.client_state = true;
                             }
-                        });
-                        // flag file for insert
-                        file.client_state = true;
+                            Err(e) => {
+                                error!("unable to create runtime for new file insertion : {e}")
+                            }
+                        }
                     }
                 }
             });
