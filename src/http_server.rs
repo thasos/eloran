@@ -104,7 +104,12 @@ async fn reading_handler(Extension(user): Extension<User>) -> impl IntoResponse 
             }
             // lib path
             let library_path = sqlite::get_library(None, None, &conn).await;
-            let library_path = library_path.first().unwrap().to_owned();
+            let empty_library = Library::default();
+            let library_path = match library_path.first() {
+                Some(library_path) => library_path,
+                None => &empty_library,
+            }
+            .to_owned();
             conn.close().await;
             // response
             let list_to_display = html_render::LibraryDisplay {
