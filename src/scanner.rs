@@ -276,6 +276,7 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
     let library_path = Path::new(&library.path);
     // recursive walk_dir
     let recent_file_list = WalkDirGeneric::<(usize, bool)>::new(library_path)
+        // TODO conf param
         .skip_hidden(true)
         .process_read_dir(move |_depth, _path, _read_dir_state, children| {
             children.iter_mut().for_each(|files_found| {
@@ -293,8 +294,8 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                             last_successfull_scan_date.as_secs(),
                             file.file_name().to_string_lossy()
                         );
-                        // insert here to benefit the jwalk parallelism
-                        // file_infos need to be mutable for ulid genereation
+                        // insert here for the jwalk parallelism benefit
+                        // file_infos need to be mutable for ulid genereation at the insert step
                         let mut file_infos =
                             extract_file_infos(&library.name, file.path().as_path());
                         let filename = file_infos.name.clone();
@@ -306,6 +307,7 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                             .expect("runtime creation for insertions while scanning library");
                         rt.block_on(async move {
                             if let Ok(conn) = sqlite::create_sqlite_pool().await {
+                                // check if file alrdeady exists in database
                                 let file_found = sqlite::check_if_file_exists(
                                     parent_path.as_str(),
                                     filename.as_str(),
@@ -320,11 +322,18 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                                     // 1 file found, ok update it
                                     info!("file modified : {}/{}", parent_path, filename);
                                     let ulid_found = &file_found[0].id;
-                                    warn!("TODO update file");
-                                    // sqlite::insert_new_file(&mut file_infos, Some(ulid_found), &conn)
-                                    // .await;
+                                    // we dont want to loose flags
+                                    file_infos.bookmarked_by = file_found[0].bookmarked_by.clone();
+                                    file_infos.read_by = file_found[0].read_by.clone();
+                                    // insert with up to date values
+                                    sqlite::insert_new_file(
+                                        &mut file_infos,
+                                        Some(ulid_found),
+                                        &conn,
+                                    )
+                                    .await;
                                 } else {
-                                    // multiple id for a file ? wrong !!
+                                    // multiple id for a file ? should not happen !
                                     // TODO propose repair or full rescan
                                     error!(
                                         "base possibly corrupted, multiple id found for file {}/{}",
