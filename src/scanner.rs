@@ -161,7 +161,7 @@ fn extract_file_infos(library_name: &str, entry: &Path) -> FileInfo {
     let size = match entry.metadata() {
         Ok(size) => Some(size.len()),
         Err(e) => {
-            warn!("unable to determine size for file {} : {}", filename, e);
+            warn!("unable to determine size for file [{}] : {}", filename, e);
             None
         }
     };
@@ -215,7 +215,7 @@ async fn walk_recent_dir(
                     if dir_entry.file_type().is_dir() && dir_entry_modified_date > last_successfull_scan_date
                     {
                         debug!(
-                            "modified time {}, greater than last successfull scan {} for directory {}",
+                            "modified time {}, greater than last successfull scan {} for directory [{}]",
                             dir_entry_modified_date.as_secs(),
                             last_successfull_scan_date.as_secs(),
                             dir_entry.file_name().to_string_lossy()
@@ -237,7 +237,7 @@ async fn walk_recent_dir(
                 file_number: None,
             };
             info!(
-                "new changes in dir {}/{}, need to scan it",
+                "new changes in dir \"{}/{}\", need to scan it",
                 current_directory.parent_path, current_directory.name,
             );
             let directory_found = sqlite::check_if_directory_exists(
@@ -289,7 +289,7 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                     if file.file_type().is_file() && file_modified_date > last_successfull_scan_date
                     {
                         debug!(
-                            "modified time {}, greater than last successfull scan {} for file {}",
+                            "modified time {}, greater than last successfull scan {} for file [{}]",
                             file_modified_date.as_secs(),
                             last_successfull_scan_date.as_secs(),
                             file.file_name().to_string_lossy()
@@ -338,7 +338,7 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                                             // multiple id for a file ? should not happen !
                                             // TODO propose repair or full rescan
                                             error!(
-                                        "base possibly corrupted, multiple id found for file {}/{}",
+                                        "base possibly corrupted, multiple id found for file \"{}/{}\"",
                                         parent_path, filename
                                     );
                                         }
@@ -358,7 +358,7 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
     for entry in recent_file_list.into_iter().flatten() {
         if entry.client_state {
             debug!(
-                "insert file {}/{}",
+                "insert file \"{}/{}\"",
                 entry.parent_path.to_string_lossy(),
                 entry.file_name.to_string_lossy()
             );
@@ -405,7 +405,7 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
                             Ok(file_number) => file_number,
                             Err(e) => {
                                 error!(
-                                    "unable to retrieve file number for directory {} : {e}",
+                                    "unable to retrieve file number for directory [{}] : {e}",
                                     directory_full_path
                                 );
                                 (0,)
@@ -419,11 +419,11 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
                         .await
                     {
                         Ok(_) => debug!(
-                            "insert file number {} for directory {}",
+                            "insert file number {} for directory [{}]",
                             directory_file_number.0, directory_full_path
                         ),
                         Err(e) => error!(
-                            "unable to set file number for directory {} : {e}",
+                            "unable to set file number for directory [{}] : {e}",
                             directory_full_path
                         ),
                     }
@@ -473,7 +473,7 @@ async fn purge_removed_directories(conn: &Pool<Sqlite>) {
         let directory_path = Path::new(&full_path);
         if !directory_path.is_dir() {
             info!(
-                "directory {} not found but still present in database, deleting",
+                "directory [{}] not found but still present in database, deleting",
                 full_path
             );
             sqlite::delete_directory(&directory, conn).await;
@@ -486,17 +486,20 @@ pub async fn launch_scan(library: &Library, conn: &Pool<Sqlite>) -> Result<()> {
     let library_path = Path::new(&library.path);
 
     if !library_path.is_dir() {
-        error!("{} does not exists", library_path.to_string_lossy());
+        error!("[{}] does not exists", library_path.to_string_lossy());
     } else {
         debug!(
-            "path \"{}\" found and is a directory",
+            "path [{}] found and is a directory",
             library_path.to_string_lossy()
         );
 
         // check if scan is locked
         let scan_lock = sqlite::get_scan_lock(library, conn).await?;
         if scan_lock {
-            debug!("library {} scan locked", library.name);
+            info!(
+                "library [{}] scan locked, already in progress",
+                library.name
+            );
         } else {
             // lock scan
             sqlite::toggle_scan_lock(library, conn).await?;
@@ -541,6 +544,8 @@ pub async fn launch_scan(library: &Library, conn: &Pool<Sqlite>) -> Result<()> {
 pub async fn scan_routine(sleep_time: Duration) {
     match sqlite::create_sqlite_pool().await {
         Ok(conn) => {
+            // reset scan_lock for all libraries (in case of previous crash)
+
             // main loop
             loop {
                 // retrieve library list at each run (if added from web ui...)
@@ -550,10 +555,10 @@ pub async fn scan_routine(sleep_time: Duration) {
 
                 // library path loop
                 for library in library_list {
-                    info!("start scan for library {}", &library.name);
+                    info!("start scan for library [{}]", &library.name);
                     // TODO error handling
                     let _ = launch_scan(&library, &conn).await;
-                    info!("finish scan for library {}", &library.name);
+                    info!("finish scan for library [{}]", &library.name);
                 }
 
                 // TODO true schedule, last scan status in db...
@@ -800,7 +805,7 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
         {
             Ok(_) => (),
             Err(e) => warn!(
-                "unable to extract path '{}' from file '{}' : {e}",
+                "unable to extract path [{}] from file [{}] : {e}",
                 image_path_in_achive, file.name
             ),
         }

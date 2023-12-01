@@ -33,7 +33,7 @@ pub async fn init_database() -> Result<(), String> {
         match fs::create_dir(database_path) {
             Ok(_) => (),
             Err(e) => error!(
-                "failed to create {} : {}",
+                "failed to create [{}] : {}",
                 database_path.to_string_lossy(),
                 e
             ),
@@ -45,14 +45,14 @@ pub async fn init_database() -> Result<(), String> {
         .await
         .unwrap_or(false)
     {
-        info!("creating database {}", crate::DB_URL);
+        info!("creating database [{}]", crate::DB_URL);
         match Sqlite::create_database(crate::DB_URL).await {
             Ok(_) => {
                 info!("database successfully created");
                 Ok(())
             }
             Err(e) => {
-                let msg = format!("failed to create database {} : {}", crate::DB_URL, e);
+                let msg = format!("failed to create database [{}] : {}", crate::DB_URL, e);
                 error!("{msg}");
                 Err(msg)
             }
@@ -859,7 +859,7 @@ pub async fn update_last_successfull_scan_date(library_path: &i64, conn: &Pool<S
     {
         Ok(_) => {
             debug!(
-                "last_successfull_scan_date updated in database for library id {library_path} : {}",
+                "last_successfull_scan_date updated in database for library id [{library_path}] : {}",
                 since_the_epoch.as_secs()
             )
         }
@@ -901,11 +901,14 @@ pub async fn get_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<boo
     {
         Ok(lock) => {
             let lock_status: bool = lock.get("scan_lock");
-            info!("scan_lock updated for library {}", library.name);
+            debug!(
+                "scan_lock state for library [{}] : {}",
+                library.name, lock_status
+            );
             Ok(lock_status)
         }
         Err(_) => {
-            let msg = format!("could not update scan_lock for library {}", library.name);
+            let msg = format!("could not update scan_lock for library [{}]", library.name);
             warn!("{msg}");
             Err(msg)
         }
@@ -923,11 +926,11 @@ pub async fn toggle_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<
     .await
     {
         Ok(_) => {
-            info!("scan_lock updated for library {}", library.name);
+            info!("scan_lock updated for library [{}]", library.name);
             Ok(())
         }
         Err(_) => {
-            let msg = format!("could not update scan_lock for library {}", library.name);
+            let msg = format!("could not update scan_lock for library [{}]", library.name);
             warn!("{msg}");
             Err(msg)
         }
