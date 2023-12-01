@@ -892,22 +892,42 @@ pub async fn insert_new_dir(directory: &DirectoryInfo, ulid: Option<&str>, conn:
     };
 }
 
+/// check scan lock for a library, return the value of boolean in database
+pub async fn get_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<bool, String> {
+    match sqlx::query("SELECT scan_lock FROM core WHERE id = ?")
+        .bind(library.id)
+        .fetch_one(conn)
+        .await
+    {
+        Ok(lock) => {
+            let lock_status: bool = lock.get("scan_lock");
+            info!("scan_lock updated for library {}", library.name);
+            Ok(lock_status)
+        }
+        Err(_) => {
+            let msg = format!("could not update scan_lock for library {}", library.name);
+            warn!("{msg}");
+            Err(msg)
+        }
+    }
+}
+
 /// lock scan for a library
-pub async fn toggle_scan_lock(library_id: &i64, conn: &Pool<Sqlite>) -> Result<(), String> {
+pub async fn toggle_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<(), String> {
     // toggle boolean in sqlite
     match sqlx::query(
         "UPDATE core SET scan_lock = ((scan_lock | 1) - (scan_lock & 1)) WHERE id = ?",
     )
-    .bind(library_id)
+    .bind(library.id)
     .execute(conn)
     .await
     {
         Ok(_) => {
-            info!("scan_lock updated for library {library_id}");
+            info!("scan_lock updated for library {}", library.name);
             Ok(())
         }
         Err(_) => {
-            let msg = format!("could not update scan_lock for library {library_id}");
+            let msg = format!("could not update scan_lock for library {}", library.name);
             warn!("{msg}");
             Err(msg)
         }

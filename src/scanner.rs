@@ -482,7 +482,7 @@ async fn purge_removed_directories(conn: &Pool<Sqlite>) {
 }
 
 /// scan function for routine or on demand
-pub async fn launch_scan(library: Library, conn: &Pool<Sqlite>) {
+pub async fn launch_scan(library: &Library, conn: &Pool<Sqlite>) -> Result<()> {
     let library_path = Path::new(&library.path);
 
     if !library_path.is_dir() {
@@ -493,33 +493,46 @@ pub async fn launch_scan(library: Library, conn: &Pool<Sqlite>) {
             library_path.to_string_lossy()
         );
 
-        // TODO really need this ?
-        // retrieve last_successfull_scan_date, 0 if first run
-        // let last_successfull_scan_date = if first_scan_run {
-        //     first_scan_run = false;
-        //     Duration::from_secs(0)
-        // } else {
-        //     sqlite::get_last_successfull_scan_date(library_id, conn).await
-        // };
-        let last_successfull_scan_date =
-            sqlite::get_last_successfull_scan_date(library.id, conn).await;
-        debug!("last_successfull_scan_date : {last_successfull_scan_date:?}");
+        // check if scan is locked
+        let scan_lock = sqlite::get_scan_lock(library, conn).await?;
+        if scan_lock {
+            debug!("library {} scan locked", library.name);
+        } else {
+            // lock scan
+            sqlite::toggle_scan_lock(library, conn).await?;
 
-        // recent directories to find new and removed files
-        walk_recent_dir(library_path, last_successfull_scan_date, conn).await;
+            // TODO really need this ?
+            // retrieve last_successfull_scan_date, 0 if first run
+            // let last_successfull_scan_date = if first_scan_run {
+            //     first_scan_run = false;
+            //     Duration::from_secs(0)
+            // } else {
+            //     sqlite::get_last_successfull_scan_date(library_id, conn).await
+            // };
+            let last_successfull_scan_date =
+                sqlite::get_last_successfull_scan_date(library.id, conn).await;
+            debug!("last_successfull_scan_date : {last_successfull_scan_date:?}");
 
-        // removed directory
-        purge_removed_directories(conn).await;
+            // recent directories to find new and removed files
+            walk_recent_dir(library_path, last_successfull_scan_date, conn).await;
 
-        // recent files : added and modified files
-        // TODO this fn create a proper sql connexion, better this way ?
-        walk_recent_files_and_insert(library.clone(), last_successfull_scan_date);
+            // removed directory
+            purge_removed_directories(conn).await;
 
-        // end scanner, update date if successfull
-        // TODO how to check if successfull ?
-        // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
-        sqlite::update_last_successfull_scan_date(&library.id, conn).await;
+            // recent files : added and modified files
+            // TODO this fn create a proper sql connexion, better this way ?
+            walk_recent_files_and_insert(library.clone(), last_successfull_scan_date);
+
+            // end scanner, update date if successfull
+            // TODO how to check if successfull ?
+            // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
+            sqlite::update_last_successfull_scan_date(&library.id, conn).await;
+
+            // lock scan
+            sqlite::toggle_scan_lock(library, conn).await?;
+        }
     }
+    Ok(())
 }
 
 /// scan library path and add files in db
@@ -537,7 +550,10 @@ pub async fn scan_routine(sleep_time: Duration) {
 
                 // library path loop
                 for library in library_list {
-                    launch_scan(library, &conn).await;
+                    info!("start scan for library {}", &library.name);
+                    // TODO error handling
+                    let _ = launch_scan(&library, &conn).await;
+                    info!("finish scan for library {}", &library.name);
                 }
 
                 // TODO true schedule, last scan status in db...
