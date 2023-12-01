@@ -481,6 +481,47 @@ async fn purge_removed_directories(conn: &Pool<Sqlite>) {
     }
 }
 
+/// scan function for routine or on demand
+pub async fn launch_scan(library: Library, conn: &Pool<Sqlite>) {
+    let library_path = Path::new(&library.path);
+
+    if !library_path.is_dir() {
+        error!("{} does not exists", library_path.to_string_lossy());
+    } else {
+        debug!(
+            "path \"{}\" found and is a directory",
+            library_path.to_string_lossy()
+        );
+
+        // TODO really need this ?
+        // retrieve last_successfull_scan_date, 0 if first run
+        // let last_successfull_scan_date = if first_scan_run {
+        //     first_scan_run = false;
+        //     Duration::from_secs(0)
+        // } else {
+        //     sqlite::get_last_successfull_scan_date(library_id, conn).await
+        // };
+        let last_successfull_scan_date =
+            sqlite::get_last_successfull_scan_date(library.id, conn).await;
+        debug!("last_successfull_scan_date : {last_successfull_scan_date:?}");
+
+        // recent directories to find new and removed files
+        walk_recent_dir(library_path, last_successfull_scan_date, conn).await;
+
+        // removed directory
+        purge_removed_directories(conn).await;
+
+        // recent files : added and modified files
+        // TODO this fn create a proper sql connexion, better this way ?
+        walk_recent_files_and_insert(library.clone(), last_successfull_scan_date);
+
+        // end scanner, update date if successfull
+        // TODO how to check if successfull ?
+        // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
+        sqlite::update_last_successfull_scan_date(&library.id, conn).await;
+    }
+}
+
 /// scan library path and add files in db
 // batch insert -> no speed improvement
 // TODO check total number file found, vs total in db (for insert errors) ?
@@ -496,43 +537,7 @@ pub async fn scan_routine(sleep_time: Duration) {
 
                 // library path loop
                 for library in library_list {
-                    let library_path = Path::new(&library.path);
-
-                    if !library_path.is_dir() {
-                        error!("{} does not exists", library_path.to_string_lossy());
-                    } else {
-                        debug!(
-                            "path \"{}\" found and is a directory",
-                            library_path.to_string_lossy()
-                        );
-
-                        // TODO really need this ?
-                        // retrieve last_successfull_scan_date, 0 if first run
-                        // let last_successfull_scan_date = if first_scan_run {
-                        //     first_scan_run = false;
-                        //     Duration::from_secs(0)
-                        // } else {
-                        //     sqlite::get_last_successfull_scan_date(library_id, &conn).await
-                        // };
-                        let last_successfull_scan_date =
-                            sqlite::get_last_successfull_scan_date(library.id, &conn).await;
-                        debug!("last_successfull_scan_date : {last_successfull_scan_date:?}");
-
-                        // recent directories to find new and removed files
-                        walk_recent_dir(library_path, last_successfull_scan_date, &conn).await;
-
-                        // removed directory
-                        purge_removed_directories(&conn).await;
-
-                        // recent files : added and modified files
-                        // TODO this fn create a proper sql connexion, better this way ?
-                        walk_recent_files_and_insert(library.clone(), last_successfull_scan_date);
-
-                        // end scanner, update date if successfull
-                        // TODO how to check if successfull ?
-                        // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
-                        sqlite::update_last_successfull_scan_date(&library.id, &conn).await;
-                    }
+                    launch_scan(library, &conn).await;
                 }
 
                 // TODO true schedule, last scan status in db...
