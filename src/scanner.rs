@@ -545,6 +545,8 @@ pub async fn scan_routine(sleep_time: Duration) {
     match sqlite::create_sqlite_pool().await {
         Ok(conn) => {
             // reset scan_lock for all libraries (in case of previous crash)
+            // TODO error handling
+            let _ = sqlite::reset_scan_lock(&conn).await;
 
             // main loop
             loop {

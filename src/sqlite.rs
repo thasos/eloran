@@ -936,3 +936,21 @@ pub async fn toggle_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<
         }
     }
 }
+
+/// reset scan lock for all libraries
+pub async fn reset_scan_lock(conn: &Pool<Sqlite>) -> Result<(), String> {
+    match sqlx::query("UPDATE core SET scan_lock = 0")
+        .execute(conn)
+        .await
+    {
+        Ok(_) => {
+            info!("scan_lock reseted for all libraries");
+            Ok(())
+        }
+        Err(_) => {
+            let msg = "could not update scan_lock in database";
+            error!("{msg}");
+            Err(msg.to_string())
+        }
+    }
+}
