@@ -120,7 +120,7 @@ async fn reading_handler(Extension(user): Extension<User>) -> impl IntoResponse 
                 current_path: None,
                 search_query: None,
             };
-            Html(html_render::library(list_to_display))
+            Html(html_render::library_display(list_to_display))
         }
         Err(_) => error_handler(),
     }
@@ -162,7 +162,7 @@ async fn bookmarks_handler(Extension(user): Extension<User>) -> impl IntoRespons
                 current_path: None,
                 search_query: None,
             };
-            Html(html_render::library(list_to_display))
+            Html(html_render::library_display(list_to_display))
         }
         Err(_) => error_handler(),
     }
@@ -207,7 +207,7 @@ async fn search_handler(Extension(user): Extension<User>, query: String) -> impl
                 current_path: None,
                 search_query: Some(query.to_string()),
             };
-            Html(html_render::library(list_to_display))
+            Html(html_render::library_display(list_to_display))
         }
         Err(_) => error_handler(),
     }
@@ -841,7 +841,7 @@ async fn library_handler(
                             Ok(files_list) => files_list,
                             Err(e) => {
                                 warn!("empty library : {}", e);
-                                let empty_list: Vec<FileInfo> = Vec::new();
+                                let empty_list: Vec<FileInfo> = Vec::with_capacity(0);
                                 empty_list
                             }
                         };
@@ -888,7 +888,7 @@ async fn library_handler(
                     search_query: None,
                 }
             };
-            Html(html_render::library(list_to_display))
+            Html(html_render::library_display(list_to_display))
         }
         Err(_) => error_handler(),
     }

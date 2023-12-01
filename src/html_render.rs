@@ -341,8 +341,7 @@ pub struct LibraryDisplay {
     // TODO need search query option string
 }
 
-// TODO rename fn...
-pub fn library(list_to_display: LibraryDisplay) -> String {
+pub fn library_display(list_to_display: LibraryDisplay) -> String {
     // we dispose of following variables :
     // - directory.name : Subdir2
     // - directory.parent_path : /home/thasos/mylibrary/Dragonlance
@@ -586,7 +585,7 @@ mod tests {
             current_path: None,
             search_query: None,
         };
-        insta::assert_yaml_snapshot!(library(list_to_display))
+        insta::assert_yaml_snapshot!(library_display(list_to_display))
     }
     #[test]
     fn test_menu() {
