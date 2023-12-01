@@ -750,12 +750,15 @@ async fn library_handler(
 ) -> impl IntoResponse {
     match sqlite::create_sqlite_pool().await {
         Ok(conn) => {
+            // sub_path is the string after the first `/`
             let sub_path = match &path {
                 Some(path) => format!("/{}", path.as_str()),
                 None => String::new(),
             };
             info!("get /library{} : {}", &sub_path, &user.name);
 
+            // if sub_path is empty : `/library` is called
+            // we must print all libraries
             let list_to_display = if sub_path.is_empty() {
                 // construct library list
                 let library_list: Vec<Library> = {
@@ -788,6 +791,7 @@ async fn library_handler(
                     current_path: Some(sub_path.clone()),
                     search_query: None,
                 }
+            // if sub_path is not empty, we are in a specific library (`/library/foo`)
             } else {
                 // retrieve library name from path begining
                 let (only_library_name, path_rest) = match &path {
