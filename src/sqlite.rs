@@ -111,6 +111,7 @@ CREATE TABLE IF NOT EXISTS core (
   id INTEGER PRIMARY KEY NOT NULL,
   name TEXT DEFAULT NULL UNIQUE,
   path TEXT DEFAULT NULL UNIQUE,
+  scan_lock BOOLEAN DEFAULT FALSE,
   last_successfull_scan_date INTEGER NOT NULL DEFAULT 0,
   last_successfull_extract_date INTEGER NOT NULL DEFAULT 0
 );
@@ -690,11 +691,11 @@ pub async fn get_files_from_directory(
 }
 
 /// get last successfull scan date in EPOCH format from database
-pub async fn get_last_successfull_scan_date(library_path: i64, conn: &Pool<Sqlite>) -> Duration {
+pub async fn get_last_successfull_scan_date(library_id: i64, conn: &Pool<Sqlite>) -> Duration {
     let last_successfull_scan_date: i64 = match sqlx::query(
         "SELECT last_successfull_scan_date FROM core WHERE id = ?",
     )
-    .bind(library_path)
+    .bind(library_id)
     .fetch_one(conn)
     .await
     {
@@ -889,4 +890,26 @@ pub async fn insert_new_dir(directory: &DirectoryInfo, ulid: Option<&str>, conn:
         }
         Err(e) => error!("directory infos insert failed : {e}"),
     };
+}
+
+/// lock scan for a library
+pub async fn toggle_scan_lock(library_id: &i64, conn: &Pool<Sqlite>) -> Result<(), String> {
+    // toggle boolean in sqlite
+    match sqlx::query(
+        "UPDATE core SET scan_lock = ((scan_lock | 1) - (scan_lock & 1)) WHERE id = ?",
+    )
+    .bind(library_id)
+    .execute(conn)
+    .await
+    {
+        Ok(_) => {
+            info!("scan_lock updated for library {library_id}");
+            Ok(())
+        }
+        Err(_) => {
+            let msg = format!("could not update scan_lock for library {library_id}");
+            warn!("{msg}");
+            Err(msg)
+        }
+    }
 }
