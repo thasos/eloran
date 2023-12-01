@@ -203,8 +203,8 @@ pub async fn create_library_path(library_path: Vec<String>) {
         let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
         // TODO ignore UNIQUE constraint when insert here (or add a test "if exists" ?)
         match sqlx::query("INSERT OR IGNORE INTO core(name, path) VALUES (?, ?);")
-            .bind(library.name)
-            .bind(library.path)
+            .bind(&library.name)
+            .bind(&library.path)
             .execute(&conn)
             .await
         {
@@ -908,7 +908,10 @@ pub async fn get_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<boo
             Ok(lock_status)
         }
         Err(_) => {
-            let msg = format!("could not update scan_lock for library [{}]", library.name);
+            let msg = format!(
+                "could not get scan_lock status for library [{}]",
+                library.name
+            );
             warn!("{msg}");
             Err(msg)
         }

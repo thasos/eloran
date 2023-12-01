@@ -504,6 +504,13 @@ pub async fn launch_scan(library: &Library, conn: &Pool<Sqlite>) -> Result<()> {
             // lock scan
             sqlite::toggle_scan_lock(library, conn).await?;
 
+            // TODO remove this shit
+            // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+            // error!("sleep for {}", library.name);
+            // let sleep_time = Duration::from_secs(20);
+            // tokio::time::sleep(sleep_time).await;
+            // error!("end sleep for {}", library.name);
+
             // TODO really need this ?
             // retrieve last_successfull_scan_date, 0 if first run
             // let last_successfull_scan_date = if first_scan_run {
@@ -552,8 +559,6 @@ pub async fn scan_routine(sleep_time: Duration) {
             loop {
                 // retrieve library list at each run (if added from web ui...)
                 let library_list = sqlite::get_library(None, None, &conn).await;
-                // TODO multi lib first_scan_run
-                // let mut first_scan_run = true;
 
                 // library path loop
                 for library in library_list {
