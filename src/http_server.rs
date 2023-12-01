@@ -794,27 +794,32 @@ async fn library_handler(
             // if sub_path is not empty, we are in a specific library (`/library/foo`)
             } else {
                 // retrieve library name from path begining
-                let (only_library_name, path_rest) = match &path {
+                let (library_name, path_end) = match &path {
+                    // `/library/foo/bar/baz` become :
+                    // - library_name : `foo`
+                    // - path_rest : `bar/baz`
                     Some(path) => {
-                        // TODO rename vars
                         let path = path.to_string();
-                        let mut vec_path: VecDeque<&str> = path.split('/').collect();
-                        let library_name = vec_path[0].to_string();
-                        vec_path.pop_front();
-                        let end: String = vec_path.iter().map(|s| "/".to_string() + s).collect();
-
+                        let mut vec_splitted_path: VecDeque<&str> = path.split('/').collect();
+                        let library_name = vec_splitted_path[0].to_string();
+                        vec_splitted_path.pop_front();
+                        let end: String = vec_splitted_path
+                            .iter()
+                            .map(|s| "/".to_string() + s)
+                            .collect();
                         (library_name, end)
                     }
                     None => ("".to_string(), "".to_string()),
                 };
+
                 // retrieve true parent_path on disk from library name
                 let search_parent_path_vec =
-                    sqlite::get_library(Some(&only_library_name), None, &conn).await;
+                    sqlite::get_library(Some(&library_name), None, &conn).await;
                 let query_parent_path = match search_parent_path_vec.first() {
-                    Some(path) => format!("{}{}", path.path.to_owned(), path_rest),
+                    Some(path) => format!("{}{}", path.path.to_owned(), path_end),
                     None => {
                         warn!(
-                            "an empty library path should not happen, you must force a full rescan"
+                            "an empty library path should not happen, you should force a full rescan"
                         );
                         "".to_string()
                     }
@@ -826,7 +831,7 @@ async fn library_handler(
 
                 // construct lists
                 let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = {
-                    // TODO set limit in conf
+                    // TODO pagination ? set limit in conf
                     let files_list: Vec<FileInfo> =
                         match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
                             .bind(&query_parent_path)
