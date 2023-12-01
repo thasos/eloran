@@ -357,9 +357,8 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
     if let Some(current_path) = list_to_display.current_path.clone() {
         let mut full_path: Vec<&str> = current_path.split('/').collect();
         full_path.pop();
-        // TODO better variable name
-        for word in full_path {
-            up_link.push_str(word);
+        for element in full_path {
+            up_link.push_str(element);
             up_link.push('/');
         }
         up_link.pop();
@@ -381,6 +380,16 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
                 }
                 h2 { a(href=format!("/library{}", &up_link), class="navigation") : "↖️  up" }
             }
+
+            // if lists are empty, print a message
+            @ if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() {
+                p {
+                    // TODO need library name or id here (in struct LibraryDisplay)
+                    : format!("Library {} is empty, please be patient or force a ", &list_to_display.library_path);
+                    a(href=format!("/scan_lib/{}", &list_to_display.library_path), class="action") : "full scan"
+                }
+            }
+
             // image gallery
             // https://www.w3schools.com/Css/css_image_gallery.asp
             @ for directory in &list_to_display.directories_list.to_owned() {
