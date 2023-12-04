@@ -601,6 +601,7 @@ mod tests {
             user: User::default(),
             directories_list: Vec::with_capacity(0),
             files_list: Vec::with_capacity(0),
+            library_id: None,
             library_path: String::from("some/path"),
             current_path: None,
             search_query: None,
