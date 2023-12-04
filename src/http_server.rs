@@ -580,7 +580,7 @@ async fn new_library_handler(Extension(user): Extension<User>, path: String) -> 
         // return confirmation message
         // TODO render
         Html(format!(
-            "new library added, path :  {}<br /><a href=\"/\">return</a>",
+            "new library added, path :  {}<br /><a href=\"/admin\">return</a>",
             decoded_path
         ))
         .into_response()
