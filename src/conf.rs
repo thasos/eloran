@@ -27,11 +27,13 @@ pub fn init_conf() -> Conf {
         if env::var("RUST_LOG").is_err() {
             // crates pdf and hypper are not too verbose
             logbuilder.filter(Some("sqlx::"), log::LevelFilter::Off);
+            logbuilder.filter(Some("hyper::"), log::LevelFilter::Off);
         }
     } else if env::var("RUST_LOG").is_err() {
         logbuilder.filter_level(log::LevelFilter::Info);
         // crates pdf and hypper are not too verbose
         logbuilder.filter(Some("sqlx::"), log::LevelFilter::Off);
+        logbuilder.filter(Some("hyper::"), log::LevelFilter::Off);
     }
     match logbuilder.try_init() {
         Ok(_) => (),

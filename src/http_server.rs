@@ -116,6 +116,7 @@ async fn reading_handler(Extension(user): Extension<User>) -> impl IntoResponse 
                 user: user.clone(),
                 directories_list: Vec::with_capacity(0),
                 files_list: files_results_with_status,
+                library_id: None,
                 library_path: library_path.path,
                 current_path: None,
                 search_query: None,
@@ -158,6 +159,7 @@ async fn bookmarks_handler(Extension(user): Extension<User>) -> impl IntoRespons
                 user: user.clone(),
                 directories_list: Vec::with_capacity(0),
                 files_list: files_results_with_status,
+                library_id: None,
                 library_path: library_path.path,
                 current_path: None,
                 search_query: None,
@@ -203,6 +205,7 @@ async fn search_handler(Extension(user): Extension<User>, query: String) -> impl
                 user: user.clone(),
                 directories_list: directories_results,
                 files_list: files_results_with_status,
+                library_id: None,
                 library_path: library_path.path,
                 current_path: None,
                 search_query: Some(query.to_string()),
@@ -725,7 +728,20 @@ async fn admin_library_handler(
                         Html(format!("TODO : delete lib id = {library_id}")).into_response()
                     }
                     "full_rescan" => {
-                        Html(format!("TODO : rescan lib id = {library_id}")).into_response()
+                        match sqlite::get_library(None, Some(&library_id), &conn)
+                            .await
+                            .first()
+                        {
+                            Some(library) => {
+                                scanner::launch_scan(library, &conn).await.ok();
+                                Html(format!(
+                                    "library {} scanned (<a href=\"/admin\">return to admin panel</a>)",
+                                    &library.name
+                                ))
+                                .into_response()
+                            }
+                            None => Html("unable to find library in database").into_response(),
+                        }
                     }
                     "covers" => Html(format!("TODO : lib id = {library_id}, covers flag toggle"))
                         .into_response(),
@@ -787,6 +803,7 @@ async fn library_handler(
                     user: user.clone(),
                     directories_list: library_as_directories_list,
                     files_list: Vec::new(),
+                    library_id: None,
                     library_path: "/".to_string(),
                     current_path: Some(sub_path.clone()),
                     search_query: None,
@@ -812,17 +829,21 @@ async fn library_handler(
                     None => ("".to_string(), "".to_string()),
                 };
 
+                // TODO fix this ugly block... it's a simple `let library = match....`
                 // retrieve true parent_path on disk from library name
-                let search_parent_path_vec =
-                    sqlite::get_library(Some(&library_name), None, &conn).await;
-                let query_parent_path = match search_parent_path_vec.first() {
+                let libraries_vec = sqlite::get_library(Some(&library_name), None, &conn).await;
+                let query_parent_path = match libraries_vec.first() {
                     Some(path) => format!("{}{}", path.path.to_owned(), path_end),
                     None => {
-                        warn!(
-                            "an empty library path should not happen, you should force a full rescan"
-                        );
-                        "".to_string()
+                        let msg = "an empty library path should not happen, you should force a full rescan";
+                        warn!("{msg}");
+                        msg.to_string()
                     }
+                };
+                // 🤮 remove this block, see above TODO
+                let library = match libraries_vec.first() {
+                    Some(library) => library.clone(),
+                    None => Library::default(),
                 };
 
                 // we need user_id for bookmark and read status
@@ -883,6 +904,7 @@ async fn library_handler(
                     user: user.clone(),
                     directories_list,
                     files_list: files_list_with_status,
+                    library_id: Some(library.id),
                     library_path: query_parent_path.to_string(),
                     current_path: Some(sub_path),
                     search_query: None,

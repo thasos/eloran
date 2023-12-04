@@ -60,7 +60,7 @@ pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> S
                                 : " ";
                                 input(type="submit", name="delete", value="Delete");
                                 : " ";
-                                input(type="submit", name="full_rescan", value="Full Rescan (todo)");
+                                input(type="submit", name="full_rescan", value="Full Rescan");
                                 : " ";
                                 input(type="submit", name="covers", value="Disable Covers (todo)");
                             }
@@ -335,6 +335,7 @@ pub struct LibraryDisplay {
     pub user: User,
     pub directories_list: Vec<DirectoryInfo>,
     pub files_list: Vec<(FileInfo, bool, bool)>,
+    pub library_id: Option<i64>, // not really need this, see full_rescan button when lib is empty
     pub library_path: String,
     pub current_path: Option<String>,
     pub search_query: Option<String>,
@@ -385,8 +386,13 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
             @ if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() {
                 p {
                     // TODO need library name or id here (in struct LibraryDisplay)
-                    : format!("Library {} is empty, please be patient or force a ", &list_to_display.library_path);
-                    a(href=format!("/scan_lib/{}", &list_to_display.library_path), class="action") : "full scan"
+                    : format!("Library {} is empty, please be patient", &list_to_display.library_path);
+                    // TODO remove this ugly unwrap
+                    form(action=format!("/admin/library/{}", &list_to_display.library_id.unwrap_or(0)), method="post") {
+                        div {
+                            input(type="submit", name="full_rescan", value="Force a full rescan");
+                        }
+                    }
                 }
             }
 
