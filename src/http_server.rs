@@ -447,7 +447,11 @@ async fn comic_page_handler(
                     comic_board,
                 )
                     .into_response(),
-                None => "unable to get image".into_response(),
+                None => Html(html_render::simple_message(
+                    String::from("unable to get image"),
+                    format!("/reader/{}", &file_id),
+                ))
+                .into_response(),
             }
         }
         Err(_) => error_handler().into_response(),
@@ -579,9 +583,12 @@ async fn new_library_handler(Extension(user): Extension<User>, path: String) -> 
         sqlite::create_library_path(vec_decoded_path).await;
         // return confirmation message
         // TODO render
-        Html(format!(
-            "new library added, path :  {}<br /><a href=\"/admin\">return</a>",
-            decoded_path
+        Html(html_render::simple_message(
+            format!(
+                "new library added, path :  {}<br /><a href=\"/admin\">return</a>",
+                decoded_path
+            ),
+            String::from("/admin"),
         ))
         .into_response()
     } else {
@@ -725,7 +732,11 @@ async fn admin_library_handler(
                         sqlite::delete_library_from_id(&library, &conn).await;
                         // TODO delete in tables `covers`, `directories` and `reading`
                         sqlite::delete_files_from_library(&library, &conn).await;
-                        Html(format!("TODO : delete lib id = {library_id} (<a href=\"/admin\">return to admin panel</a>)")).into_response()
+                        Html(html_render::simple_message(
+                            format!("TODO : delete lib id = {library_id} (<a href=\"/admin\">return to admin panel</a>)"),
+                            String::from("/admin"),
+                        ))
+                        .into_response()
                     }
                     "full_rescan" => {
                         match sqlite::get_library(None, Some(&library_id), &conn)
@@ -734,18 +745,24 @@ async fn admin_library_handler(
                         {
                             Some(library) => {
                                 scanner::launch_scan(library, &conn).await.ok();
-                                Html(format!(
-                                    "library {} scanned (<a href=\"/admin\">return to admin panel</a>)",
-                                    &library.name
+                                Html(html_render::simple_message(
+                                    format!("library {} scanned (<a href=\"/admin\">return to admin panel</a>)", &library.name),
+                                    String::from("/admin"),
                                 ))
                                 .into_response()
                             }
-                            None => Html("unable to find library in database").into_response(),
+                            None => {
+                                Html(html_render::simple_message(
+                                    String::from("unable to find library in database"),
+                                    String::from("/admin"),
+                                ))
+                                .into_response()
+                            }
                         }
                     }
                     "covers" => Html(format!("TODO : lib id = {library_id}, covers flag toggle (<a href=\"/admin\">return to admin panel</a>)"))
                         .into_response(),
-                    _ => Html("TODO : error : unknow option").into_response(),
+                    _ => error_handler().into_response(),
                 }
             }
             Err(_) => error_handler().into_response(),
