@@ -79,8 +79,16 @@ pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> S
         div {
             ul {
                 li {
-                    form(accept-charset="utf-8", action="/sleep_time", method="post") {
-                        input(type="text", name="time", placeholder="periodic library scan sleep time", required);
+                    : "periodic library scan sleep time";
+                    form(accept-charset="utf-8", action="/scan_sleep_time", method="post") {
+                        input(type="text", name="scan_period", placeholder="in seconds", required);
+                        input(type="submit", value="Update (todo)");
+                    }
+                }
+                li {
+                    : "periodic covers extraction sleep time";
+                    form(accept-charset="utf-8", action="/extract_sleep_time", method="post") {
+                        input(type="text", name="extract_periode", placeholder="in seconds", required);
                         input(type="submit", value="Update (todo)");
                     }
                 }
