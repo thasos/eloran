@@ -383,7 +383,12 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
             }
 
             // if lists are empty, print a message
-            @ if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() {
+            @ if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() && &list_to_display.library_path == "/" {
+                p {
+                    : format!("Please add a library in ");
+                    a(href="/admin") : "admin panel"
+                }
+            } else if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() {
                 p {
                     // TODO need library name or id here (in struct LibraryDisplay)
                     : format!("Library {} is empty, please be patient", &list_to_display.library_path);

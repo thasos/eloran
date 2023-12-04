@@ -725,7 +725,7 @@ async fn admin_library_handler(
                         sqlite::delete_library_from_id(&library, &conn).await;
                         // TODO delete in tables `covers`, `directories` and `reading`
                         sqlite::delete_files_from_library(&library, &conn).await;
-                        Html(format!("TODO : delete lib id = {library_id}")).into_response()
+                        Html(format!("TODO : delete lib id = {library_id} (<a href=\"/admin\">return to admin panel</a>)")).into_response()
                     }
                     "full_rescan" => {
                         match sqlite::get_library(None, Some(&library_id), &conn)
@@ -743,7 +743,7 @@ async fn admin_library_handler(
                             None => Html("unable to find library in database").into_response(),
                         }
                     }
-                    "covers" => Html(format!("TODO : lib id = {library_id}, covers flag toggle"))
+                    "covers" => Html(format!("TODO : lib id = {library_id}, covers flag toggle (<a href=\"/admin\">return to admin panel</a>)"))
                         .into_response(),
                     _ => Html("TODO : error : unknow option").into_response(),
                 }
