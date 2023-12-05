@@ -254,7 +254,6 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
                             }
                             false => {
                                 warn!("wrong password for user [{}]", &user.name);
-                                // TODO generic page for all authent failure
                                 authent_error()
                             }
                         }

@@ -414,6 +414,7 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
                             (0,)
                         }
                     };
+                    // TODO Move to `sqlite` mod
                     // insert number
                     match sqlx::query("UPDATE directories SET file_count = ? WHERE id = ?;")
                         .bind(directory_file_count.0)
@@ -422,11 +423,11 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
                         .await
                     {
                         Ok(_) => debug!(
-                            "insert file number {} for directory [{}]",
+                            "insert file count {} for directory [{}]",
                             directory_file_count.0, directory_full_path
                         ),
                         Err(e) => error!(
-                            "unable to set file number for directory [{}] : {e}",
+                            "unable to set file count for directory [{}] : {e}",
                             directory_full_path
                         ),
                     }
