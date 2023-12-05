@@ -537,6 +537,9 @@ pub async fn launch_scan(library: &Library, conn: &Pool<Sqlite>) -> Result<()> {
             // TODO this fn create a proper sql connexion, better this way ?
             walk_recent_files_and_insert(library.clone(), last_successfull_scan_date);
 
+            // update file_count
+            sqlite::update_library_file_count(library, conn).await;
+
             // end scanner, update date if successfull
             // TODO how to check if successfull ?
             // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok

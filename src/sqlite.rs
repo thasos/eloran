@@ -232,7 +232,7 @@ pub async fn delete_library_from_id(library_list: &Vec<Library>, conn: &Pool<Sql
     }
 }
 
-pub async fn update_library_file_count(library: &Library, file_count: i32, conn: &Pool<Sqlite>) {
+pub async fn update_library_file_count(library: &Library, conn: &Pool<Sqlite>) {
     match sqlx::query(
         // update file_count in libraries table :
         //   UPDATE libraries SET file_count = 'some_val' WHERE id = 'some_id';
@@ -247,15 +247,12 @@ pub async fn update_library_file_count(library: &Library, file_count: i32, conn:
             )) > 0
         ) WHERE id = ?;",
     )
-    .bind(file_count)
+    .bind(library.id)
     .bind(library.id)
     .execute(conn)
     .await
     {
-        Ok(_) => debug!(
-            "insert file count {} for library [{}]",
-            file_count, library.id
-        ),
+        Ok(_) => debug!("insert file count for library [{}]", library.id),
         Err(e) => error!(
             "unable to set file count for library [{}] : {e}",
             library.name
