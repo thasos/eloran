@@ -83,10 +83,11 @@ fn parse_credentials(body: &str) -> (String, String) {
 
 fn error_handler() -> Html<String> {
     Html(html_render::simple_message(
-        String::from("server error, please see logs"),
-        String::from("/"),
+        "server error, please see logs",
+        None,
     ))
 }
+
 async fn reading_handler(Extension(user): Extension<User>) -> impl IntoResponse {
     info!("get /reading : {}", &user.name);
     match sqlite::create_sqlite_pool().await {
@@ -471,8 +472,8 @@ async fn comic_page_handler(
                 )
                     .into_response(),
                 None => Html(html_render::simple_message(
-                    String::from("unable to get image"),
-                    format!("/reader/{}", &file_id),
+                    "unable to get image",
+                    Some(&format!("/reader/{}", &file_id)),
                 ))
                 .into_response(),
             }
@@ -550,7 +551,7 @@ async fn reader_handler(
                 // "txt" => reader::txt(&user, file),
                 // "raw" => reader::raw(&user, file),
                 // TODO real rendered page
-                _ => Html("no yet supported".to_string()).into_response(),
+                _ => Html(html_render::simple_message("no yet supported", None)).into_response(),
             };
             conn.close().await;
             response
@@ -607,11 +608,11 @@ async fn new_library_handler(Extension(user): Extension<User>, path: String) -> 
         // return confirmation message
         // TODO render
         Html(html_render::simple_message(
-            format!(
+            &format!(
                 "new library added, path :  {}<br /><a href=\"/admin\">return</a>",
                 decoded_path
             ),
-            String::from("/admin"),
+            Some("/admin"),
         ))
         .into_response()
     } else {
@@ -683,25 +684,22 @@ async fn new_user_handler(
                 match sqlite::create_sqlite_pool().await {
                     Ok(conn) => {
                         sqlite::create_user(&new_user, &conn).await;
-                        Html(html_render::simple_message(
-                            String::from("user created"),
-                            String::from("/admin"),
-                        ))
-                        .into_response()
+                        Html(html_render::simple_message("user created", Some("/admin")))
+                            .into_response()
                     }
                     Err(_) => error_handler().into_response(),
                 }
             }
             Err(_) => Html(html_render::simple_message(
-                String::from("unable to add new user, see logs"),
-                String::from("/admin"),
+                "unable to add new user, see logs",
+                Some("/admin"),
             ))
             .into_response(),
         }
     } else {
         Html(html_render::simple_message(
-            String::from("your are not allowed to create users"),
-            String::from("/"),
+            "your are not allowed to create users",
+            Some("/"),
         ))
         .into_response()
     }
@@ -725,8 +723,8 @@ async fn change_user_handler(
                 let check_user = sqlite::get_user(None, Some(&user_id), &conn).await;
                 if check_user.is_empty() {
                     Html(html_render::simple_message(
-                        format!("user id {} does not exists", &user_id),
-                        String::from("/admin"),
+                        &format!("user id {} does not exists", &user_id),
+                        Some("/admin"),
                     ))
                     .into_response()
                 } else {
@@ -734,8 +732,8 @@ async fn change_user_handler(
                     if body.delete.is_some() && user_to_update.id != 1 {
                         sqlite::delete_user(&user_to_update, &conn).await;
                         Html(html_render::simple_message(
-                            format!("user {} deleted", &user_to_update.name),
-                            String::from("/admin"),
+                            &format!("user {} deleted", &user_to_update.name),
+                            Some("/admin"),
                         ))
                         .into_response()
                     } else if body.update.is_some() {
@@ -751,14 +749,14 @@ async fn change_user_handler(
                         }
                         sqlite::update_user(&user_to_update, &conn).await;
                         Html(html_render::simple_message(
-                            format!("user {} updated", &user_to_update.name),
-                            String::from("/admin"),
+                            &format!("user {} updated", &user_to_update.name),
+                            Some("/admin"),
                         ))
                         .into_response()
                     } else {
                         Html(html_render::simple_message(
-                            String::from("you can't delete admin account"),
-                            String::from("/admin"),
+                            "you can't delete admin account",
+                            Some("/admin"),
                         ))
                         .into_response()
                     }
@@ -768,8 +766,8 @@ async fn change_user_handler(
         }
     } else {
         Html(html_render::simple_message(
-            String::from("your are not allowed to modify users"),
-            String::from("/"),
+            "your are not allowed to modify users",
+            Some("/"),
         ))
         .into_response()
     }
@@ -796,8 +794,8 @@ async fn admin_library_handler(
                         // TODO delete in tables `covers`, `directories` and `reading`
                         sqlite::delete_files_from_library(&library, &conn).await;
                         Html(html_render::simple_message(
-                            format!("TODO : delete lib id = {library_id} (<a href=\"/admin\">return to admin panel</a>)"),
-                            String::from("/admin"),
+                            &format!("TODO : delete lib id = {library_id} (<a href=\"/admin\">return to admin panel</a>)"),
+                            Some("/admin"),
                         ))
                         .into_response()
                     }
@@ -809,15 +807,15 @@ async fn admin_library_handler(
                             Some(library) => {
                                 scanner::launch_scan(library, &conn).await.ok();
                                 Html(html_render::simple_message(
-                                    format!("library {} scanned (<a href=\"/admin\">return to admin panel</a>)", &library.name),
-                                    String::from("/admin"),
+                                    &format!("library {} scanned (<a href=\"/admin\">return to admin panel</a>)", &library.name),
+                                    Some("/admin"),
                                 ))
                                 .into_response()
                             }
                             None => {
                                 Html(html_render::simple_message(
-                                    String::from("unable to find library in database"),
-                                    String::from("/admin"),
+                                    "unable to find library in database",
+                                    Some("/admin"),
                                 ))
                                 .into_response()
                             }

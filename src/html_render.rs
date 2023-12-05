@@ -20,13 +20,15 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
     }
 }
 
-pub fn simple_message(message: String, origin: String) -> String {
+pub fn simple_message(message: &str, origin: Option<&str>) -> String {
+    let message = message.to_owned();
+    let origin = origin.to_owned();
     let body_content = box_html! {
         div {
             p { : message; }
         }
     };
-    render(body_content, Some(&origin))
+    render(body_content, origin)
 }
 
 pub fn prefs(user: &User) -> String {
