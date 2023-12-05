@@ -3,6 +3,10 @@ use crate::reader;
 use crate::scanner::{self, DirectoryInfo, FileInfo, Library};
 use crate::sqlite;
 
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Form;
@@ -79,10 +83,11 @@ fn parse_credentials(body: &str) -> (String, String) {
 
 fn error_handler() -> Html<String> {
     Html(html_render::simple_message(
-        String::from("server error, please see logs"),
-        String::from("/"),
+        "server error, please see logs",
+        None,
     ))
 }
+
 async fn reading_handler(Extension(user): Extension<User>) -> impl IntoResponse {
     info!("get /reading : {}", &user.name);
     match sqlite::create_sqlite_pool().await {
@@ -104,18 +109,24 @@ async fn reading_handler(Extension(user): Extension<User>) -> impl IntoResponse 
             }
             // lib path
             let library_path = sqlite::get_library(None, None, &conn).await;
-            let library_path = library_path.first().unwrap().to_owned();
+            let empty_library = Library::default();
+            let library_path = match library_path.first() {
+                Some(library_path) => library_path,
+                None => &empty_library,
+            }
+            .to_owned();
             conn.close().await;
             // response
             let list_to_display = html_render::LibraryDisplay {
                 user: user.clone(),
                 directories_list: Vec::with_capacity(0),
                 files_list: files_results_with_status,
+                library_id: None,
                 library_path: library_path.path,
                 current_path: None,
                 search_query: None,
             };
-            Html(html_render::library(list_to_display))
+            Html(html_render::library_display(list_to_display))
         }
         Err(_) => error_handler(),
     }
@@ -153,11 +164,12 @@ async fn bookmarks_handler(Extension(user): Extension<User>) -> impl IntoRespons
                 user: user.clone(),
                 directories_list: Vec::with_capacity(0),
                 files_list: files_results_with_status,
+                library_id: None,
                 library_path: library_path.path,
                 current_path: None,
                 search_query: None,
             };
-            Html(html_render::library(list_to_display))
+            Html(html_render::library_display(list_to_display))
         }
         Err(_) => error_handler(),
     }
@@ -198,11 +210,12 @@ async fn search_handler(Extension(user): Extension<User>, query: String) -> impl
                 user: user.clone(),
                 directories_list: directories_results,
                 files_list: files_results_with_status,
+                library_id: None,
                 library_path: library_path.path,
                 current_path: None,
                 search_query: Some(query.to_string()),
             };
-            Html(html_render::library(list_to_display))
+            Html(html_render::library_display(list_to_display))
         }
         Err(_) => error_handler(),
     }
@@ -215,25 +228,39 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
     match sqlite::create_sqlite_pool().await {
         Ok(conn) => {
             // get user from db
-            // TODO hash password
             Html({
-                let login_response = match sqlx::query_as(
-                    "SELECT * FROM users WHERE name = ? AND password_hash = ?;",
-                )
-                .bind(&username)
-                .bind(&password)
-                .fetch_one(&conn)
-                .await
+                let login_response = match sqlx::query_as("SELECT * FROM users WHERE name = ?;")
+                    .bind(&username)
+                    .fetch_one(&conn)
+                    .await
                 {
                     Ok(user) => {
-                        // TODO check if password match
-                        auth.login(&user).await.unwrap();
-                        login_ok(&user)
+                        // must set the type here
+                        let user: User = user;
+                        match verify_password(&password, &user.password_hash) {
+                            true => {
+                                // auth.login(&user).await.unwrap();
+                                // login_ok(&user)
+                                match auth.login(&user).await {
+                                    Ok(_) => {
+                                        info!("user [{}] logged in", &user.name);
+                                        login_ok(&user)
+                                    }
+                                    Err(e) => {
+                                        error!("unable to log user {} : {e}", &user.name);
+                                        String::from("unable to login, see logs")
+                                    }
+                                }
+                            }
+                            false => {
+                                warn!("wrong password for user [{}]", &user.name);
+                                authent_error()
+                            }
+                        }
                     }
                     Err(_) => {
-                        warn!("user {} not found", &username);
-                        // TODO : vraie page
-                        "user not found".to_string()
+                        warn!("user [{}] not found", &username);
+                        authent_error()
                     }
                 };
                 conn.close().await;
@@ -244,8 +271,11 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
     }
 }
 
-async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
-    info!("get /logout : {:?}", &auth.current_user);
+async fn logout_handler(
+    mut auth: AuthContext,
+    Extension(user): Extension<User>,
+) -> impl IntoResponse {
+    info!("get /logout : {}", &user.name);
     auth.logout().await;
     match &auth.current_user {
         Some(user) => {
@@ -254,7 +284,7 @@ async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
         }
         None => {
             warn!("no user found, can't logout !");
-            Html("Err".to_string())
+            error_handler()
         }
     }
 }
@@ -439,7 +469,11 @@ async fn comic_page_handler(
                     comic_board,
                 )
                     .into_response(),
-                None => "unable to get image".into_response(),
+                None => Html(html_render::simple_message(
+                    "unable to get image",
+                    Some(&format!("/reader/{}", &file_id)),
+                ))
+                .into_response(),
             }
         }
         Err(_) => error_handler().into_response(),
@@ -515,7 +549,7 @@ async fn reader_handler(
                 // "txt" => reader::txt(&user, file),
                 // "raw" => reader::raw(&user, file),
                 // TODO real rendered page
-                _ => Html("no yet supported".to_string()).into_response(),
+                _ => Html(html_render::simple_message("no yet supported", None)).into_response(),
             };
             conn.close().await;
             response
@@ -571,13 +605,47 @@ async fn new_library_handler(Extension(user): Extension<User>, path: String) -> 
         sqlite::create_library_path(vec_decoded_path).await;
         // return confirmation message
         // TODO render
-        Html(format!(
-            "new library added, path :  {}<br /><a href=\"/\">return</a>",
-            decoded_path
+        Html(html_render::simple_message(
+            &format!(
+                "new library added, path :  {}<br /><a href=\"/admin\">return</a>",
+                decoded_path
+            ),
+            Some("/admin"),
         ))
         .into_response()
     } else {
         unauthorized_admin_response().into_response()
+    }
+}
+
+/// use argon2 lib to hash password (stronger than bcrypt)
+fn hash_password(plain_text_password: &str) -> Result<String, String> {
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let hashed_password = match argon2.hash_password(plain_text_password.as_bytes(), &salt) {
+        Ok(hashed_password) => Ok(hashed_password.to_string()),
+        Err(e) => {
+            let msg = format!("unable to hash password : {e}");
+            error!("{msg}");
+            Err(msg)
+        }
+    };
+    hashed_password
+}
+
+/// verify given password with argon2 hashed
+fn verify_password(plain_text_password: &str, hashed_password: &str) -> bool {
+    // this will fail if a hash is not valid in database
+    match PasswordHash::new(hashed_password) {
+        // return true if password match, false if not
+        Ok(parsed_hash) => Argon2::default()
+            .verify_password(plain_text_password.as_bytes(), &parsed_hash)
+            .is_ok(),
+        Err(_) => {
+            // TODO handle correctly this error : notify and ask to reset password ?
+            error!("unable to verify password : wrong hash in database ?");
+            false
+        }
     }
 }
 
@@ -593,37 +661,43 @@ async fn new_user_handler(
 ) -> impl IntoResponse {
     if user.role == Role::Admin {
         // TODO check if name already exists
-        let new_user = User {
-            name: body.name,
-            password_hash: body.password,
-            role: {
-                if let Some(box_content) = body.is_admin {
-                    if box_content == "on" {
-                        Role::Admin
-                    } else {
-                        Role::User
+        match hash_password(&body.password) {
+            Ok(hashed_password) => {
+                let new_user = User {
+                    name: body.name,
+                    password_hash: hashed_password,
+                    role: {
+                        if let Some(box_content) = body.is_admin {
+                            if box_content == "on" {
+                                Role::Admin
+                            } else {
+                                Role::User
+                            }
+                        } else {
+                            Role::User
+                        }
+                    },
+                    ..User::default()
+                };
+                match sqlite::create_sqlite_pool().await {
+                    Ok(conn) => {
+                        sqlite::create_user(&new_user, &conn).await;
+                        Html(html_render::simple_message("user created", Some("/admin")))
+                            .into_response()
                     }
-                } else {
-                    Role::User
+                    Err(_) => error_handler().into_response(),
                 }
-            },
-            ..User::default()
-        };
-        match sqlite::create_sqlite_pool().await {
-            Ok(conn) => {
-                sqlite::create_user(&new_user, &conn).await;
-                Html(html_render::simple_message(
-                    String::from("user created"),
-                    String::from("/admin"),
-                ))
-                .into_response()
             }
-            Err(_) => error_handler().into_response(),
+            Err(_) => Html(html_render::simple_message(
+                "unable to add new user, see logs",
+                Some("/admin"),
+            ))
+            .into_response(),
         }
     } else {
         Html(html_render::simple_message(
-            String::from("your are not allowed to create users"),
-            String::from("/"),
+            "your are not allowed to create users",
+            Some("/"),
         ))
         .into_response()
     }
@@ -647,8 +721,8 @@ async fn change_user_handler(
                 let check_user = sqlite::get_user(None, Some(&user_id), &conn).await;
                 if check_user.is_empty() {
                     Html(html_render::simple_message(
-                        format!("user id {} does not exists", &user_id),
-                        String::from("/admin"),
+                        &format!("user id {} does not exists", &user_id),
+                        Some("/admin"),
                     ))
                     .into_response()
                 } else {
@@ -656,8 +730,8 @@ async fn change_user_handler(
                     if body.delete.is_some() && user_to_update.id != 1 {
                         sqlite::delete_user(&user_to_update, &conn).await;
                         Html(html_render::simple_message(
-                            format!("user {} deleted", &user_to_update.name),
-                            String::from("/admin"),
+                            &format!("user {} deleted", &user_to_update.name),
+                            Some("/admin"),
                         ))
                         .into_response()
                     } else if body.update.is_some() {
@@ -673,14 +747,14 @@ async fn change_user_handler(
                         }
                         sqlite::update_user(&user_to_update, &conn).await;
                         Html(html_render::simple_message(
-                            format!("user {} updated", &user_to_update.name),
-                            String::from("/admin"),
+                            &format!("user {} updated", &user_to_update.name),
+                            Some("/admin"),
                         ))
                         .into_response()
                     } else {
                         Html(html_render::simple_message(
-                            String::from("you can't delete admin account"),
-                            String::from("/admin"),
+                            "you can't delete admin account",
+                            Some("/admin"),
                         ))
                         .into_response()
                     }
@@ -690,8 +764,8 @@ async fn change_user_handler(
         }
     } else {
         Html(html_render::simple_message(
-            String::from("your are not allowed to modify users"),
-            String::from("/"),
+            "your are not allowed to modify users",
+            Some("/"),
         ))
         .into_response()
     }
@@ -713,18 +787,45 @@ async fn admin_library_handler(
             Ok(conn) => {
                 match option.as_str() {
                     "delete" => {
+                        // TODO handle library.first() like for `full_rescan`
                         let library = sqlite::get_library(None, Some(&library_id), &conn).await;
+                        info!("user [{}] asked for delete library [{}]", &user.name, &library[0].name);
                         sqlite::delete_library_from_id(&library, &conn).await;
                         // TODO delete in tables `covers`, `directories` and `reading`
                         sqlite::delete_files_from_library(&library, &conn).await;
-                        Html(format!("TODO : delete lib id = {library_id}")).into_response()
+                        info!("library [{}] deleted", &library[0].name);
+                        Html(html_render::simple_message(
+                            &format!("delete lib id = {}", &library[0].name),
+                            Some("/admin"),
+                        ))
+                        .into_response()
                     }
                     "full_rescan" => {
-                        Html(format!("TODO : rescan lib id = {library_id}")).into_response()
+                        match sqlite::get_library(None, Some(&library_id), &conn)
+                            .await
+                            .first()
+                        {
+                            Some(library) => {
+                                info!("user [{}] asked for a full rescan of library [{}]", &user.name, &library.name);
+                                scanner::launch_scan(library, &conn).await.ok();
+                                Html(html_render::simple_message(
+                                    &format!("library {} scanned (<a href=\"/admin\">return to admin panel</a>)", &library.name),
+                                    Some("/admin"),
+                                ))
+                                .into_response()
+                            }
+                            None => {
+                                Html(html_render::simple_message(
+                                    "unable to find library in database",
+                                    Some("/admin"),
+                                ))
+                                .into_response()
+                            }
+                        }
                     }
-                    "covers" => Html(format!("TODO : lib id = {library_id}, covers flag toggle"))
+                    "covers" => Html(format!("TODO : lib id = {library_id}, covers flag toggle (<a href=\"/admin\">return to admin panel</a>)"))
                         .into_response(),
-                    _ => Html("TODO : error : unknow option").into_response(),
+                    _ => error_handler().into_response(),
                 }
             }
             Err(_) => error_handler().into_response(),
@@ -739,22 +840,34 @@ fn unauthorized_admin_response() -> Html<String> {
     Html(String::from("You are not allowed to see this page"))
 }
 
+// TODO better display, and redirect to `/` after 3s
+fn authent_error() -> String {
+    String::from("Autentication error")
+}
+
 async fn library_handler(
     Extension(user): Extension<User>,
     path: Option<Path<String>>,
 ) -> impl IntoResponse {
     match sqlite::create_sqlite_pool().await {
         Ok(conn) => {
+            // sub_path is the string after the first `/`
             let sub_path = match &path {
                 Some(path) => format!("/{}", path.as_str()),
                 None => String::new(),
             };
             info!("get /library{} : {}", &sub_path, &user.name);
 
+            // if sub_path is empty : `/library` is called
+            // we must print all libraries
             let list_to_display = if sub_path.is_empty() {
                 // construct library list
                 let library_list: Vec<Library> = {
-                    match sqlx::query_as("SELECT * FROM core;").fetch_all(&conn).await {
+                    // TODO move this in `sqlite` mod
+                    match sqlx::query_as("SELECT * FROM libraries;")
+                        .fetch_all(&conn)
+                        .await
+                    {
                         Ok(library_list_rows) => library_list_rows,
                         Err(e) => {
                             warn!("empty library : {}", e);
@@ -769,7 +882,7 @@ async fn library_handler(
                         id: library.id.to_string(),
                         name: library.name.trim_start_matches('/').to_string(),
                         parent_path: "".to_string(),
-                        file_number: None,
+                        file_count: Some(library.file_count),
                     };
                     library_as_directories_list.push(library_as_dir);
                 }
@@ -779,36 +892,47 @@ async fn library_handler(
                     user: user.clone(),
                     directories_list: library_as_directories_list,
                     files_list: Vec::new(),
+                    library_id: None,
                     library_path: "/".to_string(),
                     current_path: Some(sub_path.clone()),
                     search_query: None,
                 }
+            // if sub_path is not empty, we are in a specific library (`/library/foo`)
             } else {
                 // retrieve library name from path begining
-                let (only_library_name, path_rest) = match &path {
+                let (library_name, path_end) = match &path {
+                    // `/library/foo/bar/baz` become :
+                    // - library_name : `foo`
+                    // - path_rest : `bar/baz`
                     Some(path) => {
-                        // TODO rename vars
                         let path = path.to_string();
-                        let mut vec_path: VecDeque<&str> = path.split('/').collect();
-                        let library_name = vec_path[0].to_string();
-                        vec_path.pop_front();
-                        let end: String = vec_path.iter().map(|s| "/".to_string() + s).collect();
-
+                        let mut vec_splitted_path: VecDeque<&str> = path.split('/').collect();
+                        let library_name = vec_splitted_path[0].to_string();
+                        vec_splitted_path.pop_front();
+                        let end: String = vec_splitted_path
+                            .iter()
+                            .map(|s| "/".to_string() + s)
+                            .collect();
                         (library_name, end)
                     }
                     None => ("".to_string(), "".to_string()),
                 };
+
+                // TODO fix this ugly block... it's a simple `let library = match....`
                 // retrieve true parent_path on disk from library name
-                let search_parent_path_vec =
-                    sqlite::get_library(Some(&only_library_name), None, &conn).await;
-                let query_parent_path = match search_parent_path_vec.first() {
-                    Some(path) => format!("{}{}", path.path.to_owned(), path_rest),
+                let libraries_vec = sqlite::get_library(Some(&library_name), None, &conn).await;
+                let query_parent_path = match libraries_vec.first() {
+                    Some(path) => format!("{}{}", path.path.to_owned(), path_end),
                     None => {
-                        warn!(
-                            "an empty library path should not happen, you must force a full rescan"
-                        );
-                        "".to_string()
+                        let msg = "an empty library path should not happen, you should force a full rescan";
+                        warn!("{msg}");
+                        msg.to_string()
                     }
+                };
+                // 🤮 remove this block, see above TODO
+                let library = match libraries_vec.first() {
+                    Some(library) => library.clone(),
+                    None => Library::default(),
                 };
 
                 // we need user_id for bookmark and read status
@@ -817,7 +941,7 @@ async fn library_handler(
 
                 // construct lists
                 let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = {
-                    // TODO set limit in conf
+                    // TODO pagination ? set limit in conf
                     let files_list: Vec<FileInfo> =
                         match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
                             .bind(&query_parent_path)
@@ -827,7 +951,7 @@ async fn library_handler(
                             Ok(files_list) => files_list,
                             Err(e) => {
                                 warn!("empty library : {}", e);
-                                let empty_list: Vec<FileInfo> = Vec::new();
+                                let empty_list: Vec<FileInfo> = Vec::with_capacity(0);
                                 empty_list
                             }
                         };
@@ -869,12 +993,13 @@ async fn library_handler(
                     user: user.clone(),
                     directories_list,
                     files_list: files_list_with_status,
+                    library_id: Some(library.id),
                     library_path: query_parent_path.to_string(),
                     current_path: Some(sub_path),
                     search_query: None,
                 }
             };
-            Html(html_render::library(list_to_display))
+            Html(html_render::library_display(list_to_display))
         }
         Err(_) => error_handler(),
     }

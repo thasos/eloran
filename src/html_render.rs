@@ -10,7 +10,6 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
         meta(name="viewport", content="width=device-width");
         link(rel="stylesheet", href="/css/eloran.css");
         link(rel="stylesheet", href="/css/w3.css");
-        link(rel="stylesheet", href="/css/w3-theme-dark-grey.css");
         meta(http-equiv="Cache-Control", content="no-cache, no-store, must-revalidate");
         meta(http-equiv="Pragma", content="no-cache");
         meta(http-equiv="Expires", content="0");
@@ -21,17 +20,21 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
     }
 }
 
-pub fn simple_message(message: String, origin: String) -> String {
+pub fn simple_message(message: &str, origin: Option<&str>) -> String {
+    let message = message.to_owned();
+    let origin = origin.to_owned();
+    let menu = menu(None, None);
     let body_content = box_html! {
+        : menu;
         div {
             p { : message; }
         }
     };
-    render(body_content, Some(&origin))
+    render(body_content, origin)
 }
 
 pub fn prefs(user: &User) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let body_content = box_html! {
         : menu;
         h2 { : "Preferences" }
@@ -46,7 +49,7 @@ pub fn prefs(user: &User) -> String {
 }
 
 pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let body_content = box_html! {
         : menu;
         h2 { : "Admin Panel" }
@@ -61,7 +64,7 @@ pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> S
                                 : " ";
                                 input(type="submit", name="delete", value="Delete");
                                 : " ";
-                                input(type="submit", name="full_rescan", value="Full Rescan (todo)");
+                                input(type="submit", name="full_rescan", value="Full Rescan");
                                 : " ";
                                 input(type="submit", name="covers", value="Disable Covers (todo)");
                             }
@@ -80,8 +83,16 @@ pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> S
         div {
             ul {
                 li {
-                    form(accept-charset="utf-8", action="/sleep_time", method="post") {
-                        input(type="text", name="time", placeholder="periodic library scan sleep time", required);
+                    : "periodic library scan sleep time";
+                    form(accept-charset="utf-8", action="/scan_sleep_time", method="post") {
+                        input(type="text", name="scan_period", placeholder="in seconds", required);
+                        input(type="submit", value="Update (todo)");
+                    }
+                }
+                li {
+                    : "periodic covers extraction sleep time";
+                    form(accept-charset="utf-8", action="/extract_sleep_time", method="post") {
+                        input(type="text", name="extract_periode", placeholder="in seconds", required);
                         input(type="submit", value="Update (todo)");
                     }
                 }
@@ -187,7 +198,7 @@ pub fn file_info(
     read_status: bool,
     up_link: String,
 ) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let file = file.clone();
     let body_content = box_html! {
         : menu;
@@ -226,7 +237,7 @@ pub fn file_info(
 }
 
 pub fn flag_toggle(user: &User, flag_status: bool, file_id: &str, flag: &str) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     // TODO create enum for flag...
     let flag_response = match flag {
         "bookmark" => {
@@ -258,7 +269,7 @@ pub fn flag_toggle(user: &User, flag_status: bool, file_id: &str, flag: &str) ->
 }
 
 pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let file = file.clone();
     // don't go outside the range of the book
     let previous_page = match page {
@@ -297,7 +308,7 @@ pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
 }
 
 pub fn ebook_reader(user: &User, file: &FileInfo, epub_content: &str, page: i32) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let epub_content = epub_content.to_string();
     let file = file.clone();
     // don't go outside the range of the book
@@ -336,14 +347,14 @@ pub struct LibraryDisplay {
     pub user: User,
     pub directories_list: Vec<DirectoryInfo>,
     pub files_list: Vec<(FileInfo, bool, bool)>,
+    pub library_id: Option<i64>, // not really need this, see full_rescan button when lib is empty
     pub library_path: String,
     pub current_path: Option<String>,
     pub search_query: Option<String>,
     // TODO need search query option string
 }
 
-// TODO rename fn...
-pub fn library(list_to_display: LibraryDisplay) -> String {
+pub fn library_display(list_to_display: LibraryDisplay) -> String {
     // we dispose of following variables :
     // - directory.name : Subdir2
     // - directory.parent_path : /home/thasos/mylibrary/Dragonlance
@@ -359,9 +370,8 @@ pub fn library(list_to_display: LibraryDisplay) -> String {
     if let Some(current_path) = list_to_display.current_path.clone() {
         let mut full_path: Vec<&str> = current_path.split('/').collect();
         full_path.pop();
-        // TODO better variable name
-        for word in full_path {
-            up_link.push_str(word);
+        for element in full_path {
+            up_link.push_str(element);
             up_link.push('/');
         }
         up_link.pop();
@@ -369,7 +379,7 @@ pub fn library(list_to_display: LibraryDisplay) -> String {
 
     // html rendering
     let menu = menu(
-        list_to_display.user.to_owned(),
+        Some(list_to_display.user.to_owned()),
         list_to_display.search_query.to_owned(),
     );
     let body_content = box_html! {
@@ -383,6 +393,26 @@ pub fn library(list_to_display: LibraryDisplay) -> String {
                 }
                 h2 { a(href=format!("/library{}", &up_link), class="navigation") : "↖️  up" }
             }
+
+            // if lists are empty, print a message
+            @ if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() && &list_to_display.library_path == "/" {
+                p {
+                    : format!("Please add a library in ");
+                    a(href="/admin") : "admin panel"
+                }
+            } else if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() {
+                p {
+                    // TODO need library name or id here (in struct LibraryDisplay)
+                    : format!("Library {} is empty, please be patient", &list_to_display.library_path);
+                    // TODO remove this ugly unwrap
+                    form(action=format!("/admin/library/{}", &list_to_display.library_id.unwrap_or(0)), method="post") {
+                        div {
+                            input(type="submit", name="full_rescan", value="Force a full rescan");
+                        }
+                    }
+                }
+            }
+
             // image gallery
             // https://www.w3schools.com/Css/css_image_gallery.asp
             @ for directory in &list_to_display.directories_list.to_owned() {
@@ -398,9 +428,9 @@ pub fn library(list_to_display: LibraryDisplay) -> String {
                     }) {
                         div(class="cover") {
                             img(src="/images/folder.svgz", alt="folder", width="150", height="230");
-                            @ if let Some(file_number) = directory.file_number{
-                                div(class="file_number") {
-                                    : file_number;
+                            @ if let Some(file_count) = directory.file_count{
+                                div(class="file_count") {
+                                    : file_count;
                                 }
                             }
                         }
@@ -431,7 +461,10 @@ pub fn library(list_to_display: LibraryDisplay) -> String {
     render(body_content, None)
 }
 
-fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::RenderBox + 'a> {
+fn menu<'a>(
+    user: Option<User>,
+    search_query: Option<String>,
+) -> Box<dyn horrorshow::RenderBox + 'a> {
     // TODO print a pretty menu, 1 line...
     let menu_content = box_html! {
         div(id="menu") {
@@ -444,15 +477,17 @@ fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::Ren
                 : " | ";
                 a(href="/prefs") : "preferences" ;
                 // print admin link if Role is ok
-                @ if user.role == Role::Admin {
+                @ if let Some(user) = user {
+                    @ if user.role == Role::Admin {
+                        : " | ";
+                        a(href="/admin") : "administration" ;
+                    }
                     : " | ";
-                    a(href="/admin") : "administration" ;
+                    : format!("{} - {:?}", user.name.as_str(), user.role) ;
+                    : " (";
+                    a(href="/logout") : "logout" ;
+                    : ")";
                 }
-                : " | ";
-                : format!("{} - {:?}", user.name.as_str(), user.role) ;
-                : " (";
-                a(href="/logout") : "logout" ;
-                : ")";
             }
             form(accept-charset="utf-8", action="/search", method="post") {
                 @ if let Some(query) = &search_query {
@@ -468,7 +503,7 @@ fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::Ren
 
 pub fn homepage(user: &User) -> String {
     // TODO moche (obligé le clone  ?)
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let body_content = box_html! {
         : menu;
         div(id="home-content") {
@@ -509,7 +544,7 @@ mod tests {
     }
     #[test]
     fn test_simple_message() {
-        insta::assert_yaml_snapshot!(simple_message(String::from("simple"), String::from("test")))
+        insta::assert_yaml_snapshot!(simple_message("simple", Some("test")))
     }
     #[test]
     fn test_prefs() {
@@ -583,18 +618,19 @@ mod tests {
             user: User::default(),
             directories_list: Vec::with_capacity(0),
             files_list: Vec::with_capacity(0),
+            library_id: None,
             library_path: String::from("some/path"),
             current_path: None,
             search_query: None,
         };
-        insta::assert_yaml_snapshot!(library(list_to_display))
+        insta::assert_yaml_snapshot!(library_display(list_to_display))
     }
     #[test]
     fn test_menu() {
         let user = User::default();
         let search_query = String::from("searching");
         let redirect_url = "tests";
-        let menu = menu(user, Some(search_query));
+        let menu = menu(Some(user), Some(search_query));
         let rendered_menu = render(menu, Some(redirect_url));
         insta::assert_yaml_snapshot!(rendered_menu)
     }

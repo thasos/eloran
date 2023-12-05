@@ -59,7 +59,7 @@ div.gallery:hover {
   border: 1px solid #777;
 }
 
-div.file_number {
+div.file_count {
   position: absolute;
   top: 0px;
   right: 5px;

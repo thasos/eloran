@@ -33,7 +33,7 @@ pub async fn init_database() -> Result<(), String> {
         match fs::create_dir(database_path) {
             Ok(_) => (),
             Err(e) => error!(
-                "failed to create {} : {}",
+                "failed to create [{}] : {}",
                 database_path.to_string_lossy(),
                 e
             ),
@@ -45,14 +45,14 @@ pub async fn init_database() -> Result<(), String> {
         .await
         .unwrap_or(false)
     {
-        info!("creating database {}", crate::DB_URL);
+        info!("creating database [{}]", crate::DB_URL);
         match Sqlite::create_database(crate::DB_URL).await {
             Ok(_) => {
                 info!("database successfully created");
                 Ok(())
             }
             Err(e) => {
-                let msg = format!("failed to create database {} : {}", crate::DB_URL, e);
+                let msg = format!("failed to create database [{}] : {}", crate::DB_URL, e);
                 error!("{msg}");
                 Err(msg)
             }
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS directories (
   id ULID PRIMARY KEY NOT NULL,
   name TEXT NOT NULL,
   parent_path TEXT NOT NULL,
-  file_number INTEGER DEFAULT NULL
+  file_count INTEGER DEFAULT NULL
 );
 CREATE TABLE IF NOT EXISTS files (
   id ULID PRIMARY KEY NOT NULL,
@@ -107,10 +107,12 @@ CREATE TABLE IF NOT EXISTS reading (
   page INTEGER NOT NULL,
   UNIQUE(file_id, user_id)
 );
-CREATE TABLE IF NOT EXISTS core (
+CREATE TABLE IF NOT EXISTS libraries (
   id INTEGER PRIMARY KEY NOT NULL,
   name TEXT DEFAULT NULL UNIQUE,
   path TEXT DEFAULT NULL UNIQUE,
+  scan_lock BOOLEAN DEFAULT FALSE,
+  file_count INTEGER DEFAULT NULL,
   last_successfull_scan_date INTEGER NOT NULL DEFAULT 0,
   last_successfull_extract_date INTEGER NOT NULL DEFAULT 0
 );
@@ -133,9 +135,10 @@ CREATE TABLE IF NOT EXISTS core (
 // TODO delete this when install page will be done
 pub async fn init_default_users() {
     let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
+    // the hash is `admin`
     let default_users = r#"
 INSERT OR IGNORE INTO users(id, password_hash, name, role)
-VALUES (1,'admin','admin','Admin');
+VALUES (1,'$argon2i$v=19$m=4096,t=3,p=1$c29tZXNhbHQ$25Cg7w5R2XkXVltwpaPORfIHQoK0w3IcIpeW+4X41kY','admin','Admin');
     "#;
     match sqlx::query(default_users).execute(&conn).await {
         Ok(_) => info!("users successfully created"),
@@ -197,13 +200,14 @@ pub async fn create_library_path(library_path: Vec<String>) {
             path: path.to_string(),
             last_successfull_scan_date: 0,
             last_successfull_extract_date: 0,
+            file_count: 0,
         };
         debug!("set library path : {path}");
         let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
         // TODO ignore UNIQUE constraint when insert here (or add a test "if exists" ?)
-        match sqlx::query("INSERT OR IGNORE INTO core(name, path) VALUES (?, ?);")
-            .bind(library.name)
-            .bind(library.path)
+        match sqlx::query("INSERT OR IGNORE INTO libraries(name, path) VALUES (?, ?);")
+            .bind(&library.name)
+            .bind(&library.path)
             .execute(&conn)
             .await
         {
@@ -217,7 +221,7 @@ pub async fn create_library_path(library_path: Vec<String>) {
 pub async fn delete_library_from_id(library_list: &Vec<Library>, conn: &Pool<Sqlite>) {
     for library in library_list {
         debug!("delete library id {} : {}", library.id, library.name);
-        match sqlx::query("DELETE FROM core WHERE id = ?;")
+        match sqlx::query("DELETE FROM libraries WHERE id = ?;")
             .bind(library.id)
             .execute(conn)
             .await
@@ -226,6 +230,34 @@ pub async fn delete_library_from_id(library_list: &Vec<Library>, conn: &Pool<Sql
             Err(e) => error!("failed to delete library {} : {}", library.name, e),
         }
     }
+}
+
+pub async fn update_library_file_count(library: &Library, conn: &Pool<Sqlite>) {
+    match sqlx::query(
+        // update file_count in libraries table :
+        //   UPDATE libraries SET file_count = 'some_val' WHERE id = 'some_id';
+        // get lib path :
+        //   SELECT path FROM libraries WHERE id = 'some_id');
+        // count files (not dirs) where library path is present :
+        //   SELECT count(id) FROM files WHERE instr(parent_path, 'some_path') > 0;
+        // see instr : https://www.sqlite.org/lang_corefunc.html#instr
+        "UPDATE libraries SET file_count = (
+        SELECT count(id) FROM files WHERE instr(parent_path, (
+            SELECT path FROM libraries WHERE id = ?
+            )) > 0
+        ) WHERE id = ?;",
+    )
+    .bind(library.id)
+    .bind(library.id)
+    .execute(conn)
+    .await
+    {
+        Ok(_) => debug!("insert file count for library [{}]", library.id),
+        Err(e) => error!(
+            "unable to set file count for library [{}] : {e}",
+            library.name
+        ),
+    };
 }
 
 /// delete files of a library name
@@ -265,7 +297,7 @@ pub async fn get_library(
         "".to_string()
     };
     // send query
-    match sqlx::query_as(&format!("SELECT * FROM core {};", where_clause))
+    match sqlx::query_as(&format!("SELECT * FROM libraries {};", where_clause))
         .fetch_all(conn)
         .await
     {
@@ -690,11 +722,11 @@ pub async fn get_files_from_directory(
 }
 
 /// get last successfull scan date in EPOCH format from database
-pub async fn get_last_successfull_scan_date(library_path: i64, conn: &Pool<Sqlite>) -> Duration {
+pub async fn get_last_successfull_scan_date(library_id: i64, conn: &Pool<Sqlite>) -> Duration {
     let last_successfull_scan_date: i64 = match sqlx::query(
-        "SELECT last_successfull_scan_date FROM core WHERE id = ?",
+        "SELECT last_successfull_scan_date FROM libraries WHERE id = ?",
     )
-    .bind(library_path)
+    .bind(library_id)
     .fetch_one(conn)
     .await
     {
@@ -850,7 +882,7 @@ pub async fn update_last_successfull_scan_date(library_path: &i64, conn: &Pool<S
     // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-    match sqlx::query("UPDATE core SET last_successfull_scan_date = ? WHERE id = ?;")
+    match sqlx::query("UPDATE libraries SET last_successfull_scan_date = ? WHERE id = ?;")
         .bind(since_the_epoch.as_secs() as i64)
         .bind(library_path)
         .execute(conn)
@@ -858,7 +890,7 @@ pub async fn update_last_successfull_scan_date(library_path: &i64, conn: &Pool<S
     {
         Ok(_) => {
             debug!(
-                "last_successfull_scan_date updated in database for library id {library_path} : {}",
+                "last_successfull_scan_date updated in database for library id [{library_path}] : {}",
                 since_the_epoch.as_secs()
             )
         }
@@ -889,4 +921,70 @@ pub async fn insert_new_dir(directory: &DirectoryInfo, ulid: Option<&str>, conn:
         }
         Err(e) => error!("directory infos insert failed : {e}"),
     };
+}
+
+/// check scan lock for a library, return the value of boolean in database
+pub async fn get_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<bool, String> {
+    match sqlx::query("SELECT scan_lock FROM libraries WHERE id = ?")
+        .bind(library.id)
+        .fetch_one(conn)
+        .await
+    {
+        Ok(lock) => {
+            let lock_status: bool = lock.get("scan_lock");
+            debug!(
+                "scan_lock state for library [{}] : {}",
+                library.name, lock_status
+            );
+            Ok(lock_status)
+        }
+        Err(_) => {
+            let msg = format!(
+                "could not get scan_lock status for library [{}]",
+                library.name
+            );
+            warn!("{msg}");
+            Err(msg)
+        }
+    }
+}
+
+/// lock scan for a library
+pub async fn toggle_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<(), String> {
+    // toggle boolean in sqlite
+    match sqlx::query(
+        "UPDATE libraries SET scan_lock = ((scan_lock | 1) - (scan_lock & 1)) WHERE id = ?",
+    )
+    .bind(library.id)
+    .execute(conn)
+    .await
+    {
+        Ok(_) => {
+            info!("scan_lock updated for library [{}]", library.name);
+            Ok(())
+        }
+        Err(_) => {
+            let msg = format!("could not update scan_lock for library [{}]", library.name);
+            warn!("{msg}");
+            Err(msg)
+        }
+    }
+}
+
+/// reset scan lock for all libraries
+pub async fn reset_scan_lock(conn: &Pool<Sqlite>) -> Result<(), String> {
+    match sqlx::query("UPDATE libraries SET scan_lock = 0")
+        .execute(conn)
+        .await
+    {
+        Ok(_) => {
+            info!("scan_lock reseted for all libraries");
+            Ok(())
+        }
+        Err(_) => {
+            let msg = "could not update scan_lock in database";
+            error!("{msg}");
+            Err(msg.to_string())
+        }
+    }
 }

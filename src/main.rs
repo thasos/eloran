@@ -32,7 +32,7 @@ async fn main() -> Result<(), String> {
     // scan the library files and add them in database
     tokio::spawn(async {
         info!("start scanner routine");
-        let sleep_time = Duration::from_secs(60);
+        let sleep_time = Duration::from_secs(300);
         scanner::scan_routine(sleep_time).await;
     });
     // retrieve files list from database and extract covers and some metadatas
@@ -40,7 +40,7 @@ async fn main() -> Result<(), String> {
         info!("start extractor routine");
         // 100 files per 10 second
         let extraction_speed = 100;
-        let sleep_time = Duration::from_secs(10);
+        let sleep_time = Duration::from_secs(250);
         scanner::extraction_routine(extraction_speed, sleep_time).await;
     });
 

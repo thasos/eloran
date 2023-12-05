@@ -26,6 +26,7 @@ pub struct Library {
     pub path: String,
     pub last_successfull_scan_date: i64,
     pub last_successfull_extract_date: i64,
+    pub file_count: i32,
 }
 impl Library {
     pub fn new() -> Library {
@@ -35,6 +36,7 @@ impl Library {
             path: "".to_string(),
             last_successfull_scan_date: 0,
             last_successfull_extract_date: 0,
+            file_count: 0,
         }
     }
 }
@@ -127,7 +129,7 @@ pub struct DirectoryInfo {
     pub id: String,
     pub name: String,
     pub parent_path: String,
-    pub file_number: Option<i32>,
+    pub file_count: Option<i32>,
 }
 impl PartialOrd for DirectoryInfo {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -161,7 +163,7 @@ fn extract_file_infos(library_name: &str, entry: &Path) -> FileInfo {
     let size = match entry.metadata() {
         Ok(size) => Some(size.len()),
         Err(e) => {
-            warn!("unable to determine size for file {} : {}", filename, e);
+            warn!("unable to determine size for file [{}] : {}", filename, e);
             None
         }
     };
@@ -215,7 +217,7 @@ async fn walk_recent_dir(
                     if dir_entry.file_type().is_dir() && dir_entry_modified_date > last_successfull_scan_date
                     {
                         debug!(
-                            "modified time {}, greater than last successfull scan {} for directory {}",
+                            "modified time {}, greater than last successfull scan {} for directory [{}]",
                             dir_entry_modified_date.as_secs(),
                             last_successfull_scan_date.as_secs(),
                             dir_entry.file_name().to_string_lossy()
@@ -234,10 +236,10 @@ async fn walk_recent_dir(
                 id: "666".to_string(),
                 name: entry.file_name.to_string_lossy().to_string(),
                 parent_path: entry.parent_path.to_string_lossy().to_string(),
-                file_number: None,
+                file_count: None,
             };
             info!(
-                "new changes in dir {}/{}, need to scan it",
+                "new changes in dir \"{}/{}\", need to scan it",
                 current_directory.parent_path, current_directory.name,
             );
             let directory_found = sqlite::check_if_directory_exists(
@@ -276,6 +278,7 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
     let library_path = Path::new(&library.path);
     // recursive walk_dir
     let recent_file_list = WalkDirGeneric::<(usize, bool)>::new(library_path)
+        // TODO conf param
         .skip_hidden(true)
         .process_read_dir(move |_depth, _path, _read_dir_state, children| {
             children.iter_mut().for_each(|files_found| {
@@ -288,13 +291,13 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                     if file.file_type().is_file() && file_modified_date > last_successfull_scan_date
                     {
                         debug!(
-                            "modified time {}, greater than last successfull scan {} for file {}",
+                            "modified time {}, greater than last successfull scan {} for file [{}]",
                             file_modified_date.as_secs(),
                             last_successfull_scan_date.as_secs(),
                             file.file_name().to_string_lossy()
                         );
-                        // insert here to benefit the jwalk parallelism
-                        // file_infos need to be mutable for ulid genereation
+                        // insert here for the jwalk parallelism benefit
+                        // file_infos need to be mutable for ulid genereation at the insert step
                         let mut file_infos =
                             extract_file_infos(&library.name, file.path().as_path());
                         let filename = file_infos.name.clone();
@@ -302,39 +305,54 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
                         // create a new tokio runtime for inserts
                         // we need it to use async fns create_sqlite_pool and insert_new_file
                         // TODO create one conn for each insert ? not sure if it's realy optimal...
-                        let rt = Runtime::new()
-                            .expect("runtime creation for insertions while scanning library");
-                        rt.block_on(async move {
-                            if let Ok(conn) = sqlite::create_sqlite_pool().await {
-                                let file_found = sqlite::check_if_file_exists(
-                                    parent_path.as_str(),
-                                    filename.as_str(),
-                                    &conn,
-                                )
-                                .await;
-                                if file_found.is_empty() {
-                                    // new file
-                                    info!("new file found : {}/{}", parent_path, filename);
-                                    sqlite::insert_new_file(&mut file_infos, None, &conn).await;
-                                } else if file_found.len() == 1 {
-                                    // 1 file found, ok update it
-                                    info!("file modified : {}/{}", parent_path, filename);
-                                    let ulid_found = &file_found[0].id;
-                                    warn!("TODO update file");
-                                    // sqlite::insert_new_file(&mut file_infos, Some(ulid_found), &conn)
-                                    // .await;
-                                } else {
-                                    // multiple id for a file ? wrong !!
-                                    // TODO propose repair or full rescan
-                                    error!(
-                                        "base possibly corrupted, multiple id found for file {}/{}",
+                        match Runtime::new() {
+                            Ok(rt) => {
+                                rt.block_on(async move {
+                                    if let Ok(conn) = sqlite::create_sqlite_pool().await {
+                                        // check if file alrdeady exists in database
+                                        let file_found = sqlite::check_if_file_exists(
+                                            parent_path.as_str(),
+                                            filename.as_str(),
+                                            &conn,
+                                        )
+                                        .await;
+                                        if file_found.is_empty() {
+                                            // new file
+                                            info!("new file found : {}/{}", parent_path, filename);
+                                            sqlite::insert_new_file(&mut file_infos, None, &conn)
+                                                .await;
+                                        } else if file_found.len() == 1 {
+                                            // 1 file found, ok update it
+                                            info!("file modified : {}/{}", parent_path, filename);
+                                            let ulid_found = &file_found[0].id;
+                                            // we dont want to loose flags
+                                            file_infos.bookmarked_by =
+                                                file_found[0].bookmarked_by.clone();
+                                            file_infos.read_by = file_found[0].read_by.clone();
+                                            // insert with up to date values
+                                            sqlite::insert_new_file(
+                                                &mut file_infos,
+                                                Some(ulid_found),
+                                                &conn,
+                                            )
+                                            .await;
+                                        } else {
+                                            // multiple id for a file ? should not happen !
+                                            // TODO propose repair or full rescan
+                                            error!(
+                                        "base possibly corrupted, multiple id found for file \"{}/{}\"",
                                         parent_path, filename
                                     );
-                                }
+                                        }
+                                    }
+                                });
+                                // flag file for insert
+                                file.client_state = true;
                             }
-                        });
-                        // flag file for insert
-                        file.client_state = true;
+                            Err(e) => {
+                                error!("unable to create runtime for new file insertion : {e}")
+                            }
+                        }
                     }
                 }
             });
@@ -342,7 +360,7 @@ fn walk_recent_files_and_insert(library: Library, last_successfull_scan_date: Du
     for entry in recent_file_list.into_iter().flatten() {
         if entry.client_state {
             debug!(
-                "insert file {}/{}",
+                "insert file \"{}/{}\"",
                 entry.parent_path.to_string_lossy(),
                 entry.file_name.to_string_lossy()
             );
@@ -378,36 +396,38 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
                 for directory in directories_to_scan_list {
                     let directory_full_path =
                         &format!("{}/{}", directory.parent_path, directory.name);
-                    // TODO comments
-                    // see https://github.com/launchbadge/sqlx/issues/1066
-                    let directory_file_number: (i32,) =
-                        match sqlx::query_as("SELECT count(*) FROM files WHERE parent_path = ?;")
-                            .bind(directory_full_path)
-                            .fetch_one(&conn)
-                            .await
-                        {
-                            Ok(file_number) => file_number,
-                            Err(e) => {
-                                error!(
-                                    "unable to retrieve file number for directory {} : {e}",
-                                    directory_full_path
-                                );
-                                (0,)
-                            }
-                        };
+                    // TODO comments why `(i32,)` ??
+                    // see https://github.com/launchbadge/sqlx/issues/1066 for example
+                    let directory_file_count: (i32,) = match sqlx::query_as(
+                        "SELECT count(*) FROM files WHERE instr(parent_path, ?) > 0;",
+                    )
+                    .bind(directory_full_path)
+                    .fetch_one(&conn)
+                    .await
+                    {
+                        Ok(file_count) => file_count,
+                        Err(e) => {
+                            error!(
+                                "unable to retrieve file number for directory [{}] : {e}",
+                                directory_full_path
+                            );
+                            (0,)
+                        }
+                    };
+                    // TODO Move to `sqlite` mod
                     // insert number
-                    match sqlx::query("UPDATE directories SET file_number = ? WHERE id = ?;")
-                        .bind(directory_file_number.0)
+                    match sqlx::query("UPDATE directories SET file_count = ? WHERE id = ?;")
+                        .bind(directory_file_count.0)
                         .bind(directory.id)
                         .execute(&conn)
                         .await
                     {
                         Ok(_) => debug!(
-                            "insert file number {} for directory {}",
-                            directory_file_number.0, directory_full_path
+                            "insert file count {} for directory [{}]",
+                            directory_file_count.0, directory_full_path
                         ),
                         Err(e) => error!(
-                            "unable to set file number for directory {} : {e}",
+                            "unable to set file count for directory [{}] : {e}",
                             directory_full_path
                         ),
                     }
@@ -457,12 +477,79 @@ async fn purge_removed_directories(conn: &Pool<Sqlite>) {
         let directory_path = Path::new(&full_path);
         if !directory_path.is_dir() {
             info!(
-                "directory {} not found but still present in database, deleting",
+                "directory [{}] not found but still present in database, deleting",
                 full_path
             );
             sqlite::delete_directory(&directory, conn).await;
         }
     }
+}
+
+/// scan function for routine or on demand
+pub async fn launch_scan(library: &Library, conn: &Pool<Sqlite>) -> Result<()> {
+    let library_path = Path::new(&library.path);
+
+    if !library_path.is_dir() {
+        error!("[{}] does not exists", library_path.to_string_lossy());
+    } else {
+        debug!(
+            "path [{}] found and is a directory",
+            library_path.to_string_lossy()
+        );
+
+        // check if scan is locked
+        let scan_lock = sqlite::get_scan_lock(library, conn).await?;
+        if scan_lock {
+            info!(
+                "library [{}] scan locked, already in progress",
+                library.name
+            );
+        } else {
+            // lock scan
+            sqlite::toggle_scan_lock(library, conn).await?;
+
+            // TODO remove this shit
+            // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+            // error!("sleep for {}", library.name);
+            // let sleep_time = Duration::from_secs(20);
+            // tokio::time::sleep(sleep_time).await;
+            // error!("end sleep for {}", library.name);
+
+            // TODO really need this ?
+            // retrieve last_successfull_scan_date, 0 if first run
+            // let last_successfull_scan_date = if first_scan_run {
+            //     first_scan_run = false;
+            //     Duration::from_secs(0)
+            // } else {
+            //     sqlite::get_last_successfull_scan_date(library_id, conn).await
+            // };
+            let last_successfull_scan_date =
+                sqlite::get_last_successfull_scan_date(library.id, conn).await;
+            debug!("last_successfull_scan_date : {last_successfull_scan_date:?}");
+
+            // recent directories to find new and removed files
+            walk_recent_dir(library_path, last_successfull_scan_date, conn).await;
+
+            // removed directory
+            purge_removed_directories(conn).await;
+
+            // recent files : added and modified files
+            // TODO this fn create a proper sql connexion, better this way ?
+            walk_recent_files_and_insert(library.clone(), last_successfull_scan_date);
+
+            // update file_count
+            sqlite::update_library_file_count(library, conn).await;
+
+            // end scanner, update date if successfull
+            // TODO how to check if successfull ?
+            // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
+            sqlite::update_last_successfull_scan_date(&library.id, conn).await;
+
+            // lock scan
+            sqlite::toggle_scan_lock(library, conn).await?;
+        }
+    }
+    Ok(())
 }
 
 /// scan library path and add files in db
@@ -471,52 +558,21 @@ async fn purge_removed_directories(conn: &Pool<Sqlite>) {
 pub async fn scan_routine(sleep_time: Duration) {
     match sqlite::create_sqlite_pool().await {
         Ok(conn) => {
+            // reset scan_lock for all libraries (in case of previous crash)
+            // TODO error handling
+            let _ = sqlite::reset_scan_lock(&conn).await;
+
             // main loop
             loop {
                 // retrieve library list at each run (if added from web ui...)
                 let library_list = sqlite::get_library(None, None, &conn).await;
-                // TODO multi lib first_scan_run
-                // let mut first_scan_run = true;
 
                 // library path loop
                 for library in library_list {
-                    let library_path = Path::new(&library.path);
-
-                    if !library_path.is_dir() {
-                        error!("{} does not exists", library_path.to_string_lossy());
-                    } else {
-                        debug!(
-                            "path \"{}\" found and is a directory",
-                            library_path.to_string_lossy()
-                        );
-
-                        // TODO really need this ?
-                        // retrieve last_successfull_scan_date, 0 if first run
-                        // let last_successfull_scan_date = if first_scan_run {
-                        //     first_scan_run = false;
-                        //     Duration::from_secs(0)
-                        // } else {
-                        //     sqlite::get_last_successfull_scan_date(library_id, &conn).await
-                        // };
-                        let last_successfull_scan_date =
-                            sqlite::get_last_successfull_scan_date(library.id, &conn).await;
-                        debug!("last_successfull_scan_date : {last_successfull_scan_date:?}");
-
-                        // recent directories to find new and removed files
-                        walk_recent_dir(library_path, last_successfull_scan_date, &conn).await;
-
-                        // removed directory
-                        purge_removed_directories(&conn).await;
-
-                        // recent files : added and modified files
-                        // TODO this fn create a proper sql connexion, better this way ?
-                        walk_recent_files_and_insert(library.clone(), last_successfull_scan_date);
-
-                        // end scanner, update date if successfull
-                        // TODO how to check if successfull ?
-                        // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
-                        sqlite::update_last_successfull_scan_date(&library.id, &conn).await;
-                    }
+                    info!("start scan for library [{}]", &library.name);
+                    // TODO error handling
+                    let _ = launch_scan(&library, &conn).await;
+                    info!("finish scan for library [{}]", &library.name);
                 }
 
                 // TODO true schedule, last scan status in db...
@@ -763,7 +819,7 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
         {
             Ok(_) => (),
             Err(e) => warn!(
-                "unable to extract path '{}' from file '{}' : {e}",
+                "unable to extract path [{}] from file [{}] : {e}",
                 image_path_in_achive, file.name
             ),
         }
