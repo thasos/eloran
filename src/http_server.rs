@@ -3,6 +3,10 @@ use crate::reader;
 use crate::scanner::{self, DirectoryInfo, FileInfo, Library};
 use crate::sqlite;
 
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Form;
@@ -223,24 +227,40 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
     match sqlite::create_sqlite_pool().await {
         Ok(conn) => {
             // get user from db
-            // TODO hash password
             Html({
-                let login_response = match sqlx::query_as(
-                    "SELECT * FROM users WHERE name = ? AND password_hash = ?;",
-                )
-                .bind(&username)
-                .bind(&password)
-                .fetch_one(&conn)
-                .await
+                let login_response = match sqlx::query_as("SELECT * FROM users WHERE name = ?;")
+                    .bind(&username)
+                    .fetch_one(&conn)
+                    .await
                 {
                     Ok(user) => {
-                        // TODO check if password match
-                        auth.login(&user).await.unwrap();
-                        login_ok(&user)
+                        // must set the type here
+                        let user: User = user;
+                        match verify_password(&password, &user.password_hash) {
+                            true => {
+                                // auth.login(&user).await.unwrap();
+                                // login_ok(&user)
+                                match auth.login(&user).await {
+                                    Ok(_) => {
+                                        info!("user [{}] logged in", &user.name);
+                                        login_ok(&user)
+                                    }
+                                    Err(e) => {
+                                        error!("unable to log user {} : {e}", &user.name);
+                                        String::from("unable to login, see logs")
+                                    }
+                                }
+                            }
+                            // TODO true page
+                            false => {
+                                warn!("wrong password for user [{}]", &user.name);
+                                "wrong password".to_string()
+                            }
+                        }
                     }
                     Err(_) => {
-                        warn!("user {} not found", &username);
-                        // TODO : vraie page
+                        warn!("user [{}] not found", &username);
+                        // TODO : true page
                         "user not found".to_string()
                     }
                 };
@@ -252,8 +272,11 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
     }
 }
 
-async fn logout_handler(mut auth: AuthContext) -> impl IntoResponse {
-    info!("get /logout : {:?}", &auth.current_user);
+async fn logout_handler(
+    mut auth: AuthContext,
+    Extension(user): Extension<User>,
+) -> impl IntoResponse {
+    info!("get /logout : {}", &user.name);
     auth.logout().await;
     match &auth.current_user {
         Some(user) => {
@@ -596,6 +619,37 @@ async fn new_library_handler(Extension(user): Extension<User>, path: String) -> 
     }
 }
 
+/// use argon2 lib to hash password (stronger than bcrypt)
+fn hash_password(plain_text_password: &str) -> Result<String, String> {
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    let hashed_password = match argon2.hash_password(plain_text_password.as_bytes(), &salt) {
+        Ok(hashed_password) => Ok(hashed_password.to_string()),
+        Err(e) => {
+            let msg = format!("unable to hash password : {e}");
+            error!("{msg}");
+            Err(msg)
+        }
+    };
+    hashed_password
+}
+
+/// verify given password with argon2 hashed
+fn verify_password(plain_text_password: &str, hashed_password: &str) -> bool {
+    // this will fail if a hash is not valid in database
+    match PasswordHash::new(hashed_password) {
+        // return true if password match, false if not
+        Ok(parsed_hash) => Argon2::default()
+            .verify_password(plain_text_password.as_bytes(), &parsed_hash)
+            .is_ok(),
+        Err(_) => {
+            // TODO handle correctly this error : notify and ask to reset password ?
+            error!("unable to verify password : wrong hash in database ?");
+            false
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct FormUser {
     name: String,
@@ -608,32 +662,41 @@ async fn new_user_handler(
 ) -> impl IntoResponse {
     if user.role == Role::Admin {
         // TODO check if name already exists
-        let new_user = User {
-            name: body.name,
-            password_hash: body.password,
-            role: {
-                if let Some(box_content) = body.is_admin {
-                    if box_content == "on" {
-                        Role::Admin
-                    } else {
-                        Role::User
+        match hash_password(&body.password) {
+            Ok(hashed_password) => {
+                let new_user = User {
+                    name: body.name,
+                    password_hash: hashed_password,
+                    role: {
+                        if let Some(box_content) = body.is_admin {
+                            if box_content == "on" {
+                                Role::Admin
+                            } else {
+                                Role::User
+                            }
+                        } else {
+                            Role::User
+                        }
+                    },
+                    ..User::default()
+                };
+                match sqlite::create_sqlite_pool().await {
+                    Ok(conn) => {
+                        sqlite::create_user(&new_user, &conn).await;
+                        Html(html_render::simple_message(
+                            String::from("user created"),
+                            String::from("/admin"),
+                        ))
+                        .into_response()
                     }
-                } else {
-                    Role::User
+                    Err(_) => error_handler().into_response(),
                 }
-            },
-            ..User::default()
-        };
-        match sqlite::create_sqlite_pool().await {
-            Ok(conn) => {
-                sqlite::create_user(&new_user, &conn).await;
-                Html(html_render::simple_message(
-                    String::from("user created"),
-                    String::from("/admin"),
-                ))
-                .into_response()
             }
-            Err(_) => error_handler().into_response(),
+            Err(_) => Html(html_render::simple_message(
+                String::from("unable to add new user, see logs"),
+                String::from("/admin"),
+            ))
+            .into_response(),
         }
     } else {
         Html(html_render::simple_message(

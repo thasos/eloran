@@ -19,7 +19,7 @@ Feel free to use, improve, and cry to my low code quality !
 
 - use a sqlite database
 - store ebooks and comcis covers in database (~10ko per cover, almost 160 Mo for 15000 files)
-- multiple users, with bookmarks pages, reading status with page number (not for pdf)
+- multiple users, with bookmarks pages, reading status with page number (not for pdf), [argon2](https://en.wikipedia.org/wiki/Argon2) hashed password
 - periodic scan of libraries folders
 - no cached data, comics images are extracted on the fly
 - comics pages responsive size for optimized mobile network usage
