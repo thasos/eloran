@@ -428,9 +428,9 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
                     }) {
                         div(class="cover") {
                             img(src="/images/folder.svgz", alt="folder", width="150", height="230");
-                            @ if let Some(file_number) = directory.file_number{
-                                div(class="file_number") {
-                                    : file_number;
+                            @ if let Some(file_count) = directory.file_count{
+                                div(class="file_count") {
+                                    : file_count;
                                 }
                             }
                         }

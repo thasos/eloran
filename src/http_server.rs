@@ -875,7 +875,7 @@ async fn library_handler(
                         id: library.id.to_string(),
                         name: library.name.trim_start_matches('/').to_string(),
                         parent_path: "".to_string(),
-                        file_number: None,
+                        file_count: None,
                     };
                     library_as_directories_list.push(library_as_dir);
                 }

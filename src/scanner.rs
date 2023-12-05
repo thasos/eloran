@@ -127,7 +127,7 @@ pub struct DirectoryInfo {
     pub id: String,
     pub name: String,
     pub parent_path: String,
-    pub file_number: Option<i32>,
+    pub file_count: Option<i32>,
 }
 impl PartialOrd for DirectoryInfo {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
@@ -234,7 +234,7 @@ async fn walk_recent_dir(
                 id: "666".to_string(),
                 name: entry.file_name.to_string_lossy().to_string(),
                 parent_path: entry.parent_path.to_string_lossy().to_string(),
-                file_number: None,
+                file_count: None,
             };
             info!(
                 "new changes in dir \"{}/{}\", need to scan it",
@@ -396,14 +396,14 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
                         &format!("{}/{}", directory.parent_path, directory.name);
                     // TODO comments why `(i32,)` ??
                     // see https://github.com/launchbadge/sqlx/issues/1066 for example
-                    let directory_file_number: (i32,) = match sqlx::query_as(
+                    let directory_file_count: (i32,) = match sqlx::query_as(
                         "SELECT count(*) FROM files WHERE instr(parent_path, ?) > 0;",
                     )
                     .bind(directory_full_path)
                     .fetch_one(&conn)
                     .await
                     {
-                        Ok(file_number) => file_number,
+                        Ok(file_count) => file_count,
                         Err(e) => {
                             error!(
                                 "unable to retrieve file number for directory [{}] : {e}",
@@ -413,15 +413,15 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
                         }
                     };
                     // insert number
-                    match sqlx::query("UPDATE directories SET file_number = ? WHERE id = ?;")
-                        .bind(directory_file_number.0)
+                    match sqlx::query("UPDATE directories SET file_count = ? WHERE id = ?;")
+                        .bind(directory_file_count.0)
                         .bind(directory.id)
                         .execute(&conn)
                         .await
                     {
                         Ok(_) => debug!(
                             "insert file number {} for directory [{}]",
-                            directory_file_number.0, directory_full_path
+                            directory_file_count.0, directory_full_path
                         ),
                         Err(e) => error!(
                             "unable to set file number for directory [{}] : {e}",
