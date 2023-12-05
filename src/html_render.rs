@@ -23,7 +23,9 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
 pub fn simple_message(message: &str, origin: Option<&str>) -> String {
     let message = message.to_owned();
     let origin = origin.to_owned();
+    let menu = menu(None, None);
     let body_content = box_html! {
+        : menu;
         div {
             p { : message; }
         }
@@ -32,7 +34,7 @@ pub fn simple_message(message: &str, origin: Option<&str>) -> String {
 }
 
 pub fn prefs(user: &User) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let body_content = box_html! {
         : menu;
         h2 { : "Preferences" }
@@ -47,7 +49,7 @@ pub fn prefs(user: &User) -> String {
 }
 
 pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let body_content = box_html! {
         : menu;
         h2 { : "Admin Panel" }
@@ -196,7 +198,7 @@ pub fn file_info(
     read_status: bool,
     up_link: String,
 ) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let file = file.clone();
     let body_content = box_html! {
         : menu;
@@ -235,7 +237,7 @@ pub fn file_info(
 }
 
 pub fn flag_toggle(user: &User, flag_status: bool, file_id: &str, flag: &str) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     // TODO create enum for flag...
     let flag_response = match flag {
         "bookmark" => {
@@ -267,7 +269,7 @@ pub fn flag_toggle(user: &User, flag_status: bool, file_id: &str, flag: &str) ->
 }
 
 pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let file = file.clone();
     // don't go outside the range of the book
     let previous_page = match page {
@@ -306,7 +308,7 @@ pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
 }
 
 pub fn ebook_reader(user: &User, file: &FileInfo, epub_content: &str, page: i32) -> String {
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let epub_content = epub_content.to_string();
     let file = file.clone();
     // don't go outside the range of the book
@@ -377,7 +379,7 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
 
     // html rendering
     let menu = menu(
-        list_to_display.user.to_owned(),
+        Some(list_to_display.user.to_owned()),
         list_to_display.search_query.to_owned(),
     );
     let body_content = box_html! {
@@ -459,7 +461,10 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
     render(body_content, None)
 }
 
-fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::RenderBox + 'a> {
+fn menu<'a>(
+    user: Option<User>,
+    search_query: Option<String>,
+) -> Box<dyn horrorshow::RenderBox + 'a> {
     // TODO print a pretty menu, 1 line...
     let menu_content = box_html! {
         div(id="menu") {
@@ -472,15 +477,17 @@ fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::Ren
                 : " | ";
                 a(href="/prefs") : "preferences" ;
                 // print admin link if Role is ok
-                @ if user.role == Role::Admin {
+                @ if let Some(user) = user {
+                    @ if user.role == Role::Admin {
+                        : " | ";
+                        a(href="/admin") : "administration" ;
+                    }
                     : " | ";
-                    a(href="/admin") : "administration" ;
+                    : format!("{} - {:?}", user.name.as_str(), user.role) ;
+                    : " (";
+                    a(href="/logout") : "logout" ;
+                    : ")";
                 }
-                : " | ";
-                : format!("{} - {:?}", user.name.as_str(), user.role) ;
-                : " (";
-                a(href="/logout") : "logout" ;
-                : ")";
             }
             form(accept-charset="utf-8", action="/search", method="post") {
                 @ if let Some(query) = &search_query {
@@ -496,7 +503,7 @@ fn menu<'a>(user: User, search_query: Option<String>) -> Box<dyn horrorshow::Ren
 
 pub fn homepage(user: &User) -> String {
     // TODO moche (obligé le clone  ?)
-    let menu = menu(user.to_owned(), None);
+    let menu = menu(Some(user.to_owned()), None);
     let body_content = box_html! {
         : menu;
         div(id="home-content") {
@@ -537,7 +544,7 @@ mod tests {
     }
     #[test]
     fn test_simple_message() {
-        insta::assert_yaml_snapshot!(simple_message(String::from("simple"), String::from("test")))
+        insta::assert_yaml_snapshot!(simple_message("simple", Some("test")))
     }
     #[test]
     fn test_prefs() {
@@ -623,7 +630,7 @@ mod tests {
         let user = User::default();
         let search_query = String::from("searching");
         let redirect_url = "tests";
-        let menu = menu(user, Some(search_query));
+        let menu = menu(Some(user), Some(search_query));
         let rendered_menu = render(menu, Some(redirect_url));
         insta::assert_yaml_snapshot!(rendered_menu)
     }

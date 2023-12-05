@@ -789,12 +789,15 @@ async fn admin_library_handler(
             Ok(conn) => {
                 match option.as_str() {
                     "delete" => {
+                        // TODO handle library.first() like for `full_rescan`
                         let library = sqlite::get_library(None, Some(&library_id), &conn).await;
+                        info!("user [{}] asked for delete library [{}]", &user.name, &library[0].name);
                         sqlite::delete_library_from_id(&library, &conn).await;
                         // TODO delete in tables `covers`, `directories` and `reading`
                         sqlite::delete_files_from_library(&library, &conn).await;
+                        info!("library [{}] deleted", &library[0].name);
                         Html(html_render::simple_message(
-                            &format!("TODO : delete lib id = {library_id} (<a href=\"/admin\">return to admin panel</a>)"),
+                            &format!("delete lib id = {}", &library[0].name),
                             Some("/admin"),
                         ))
                         .into_response()
@@ -805,6 +808,7 @@ async fn admin_library_handler(
                             .first()
                         {
                             Some(library) => {
+                                info!("user [{}] asked for a full rescan of library [{}]", &user.name, &library.name);
                                 scanner::launch_scan(library, &conn).await.ok();
                                 Html(html_render::simple_message(
                                     &format!("library {} scanned (<a href=\"/admin\">return to admin panel</a>)", &library.name),
