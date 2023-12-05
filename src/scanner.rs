@@ -394,23 +394,24 @@ pub async fn extraction_routine(speed: i32, sleep_time: Duration) {
                 for directory in directories_to_scan_list {
                     let directory_full_path =
                         &format!("{}/{}", directory.parent_path, directory.name);
-                    // TODO comments
-                    // see https://github.com/launchbadge/sqlx/issues/1066
-                    let directory_file_number: (i32,) =
-                        match sqlx::query_as("SELECT count(*) FROM files WHERE parent_path = ?;")
-                            .bind(directory_full_path)
-                            .fetch_one(&conn)
-                            .await
-                        {
-                            Ok(file_number) => file_number,
-                            Err(e) => {
-                                error!(
-                                    "unable to retrieve file number for directory [{}] : {e}",
-                                    directory_full_path
-                                );
-                                (0,)
-                            }
-                        };
+                    // TODO comments why `(i32,)` ??
+                    // see https://github.com/launchbadge/sqlx/issues/1066 for example
+                    let directory_file_number: (i32,) = match sqlx::query_as(
+                        "SELECT count(*) FROM files WHERE instr(parent_path, ?) > 0;",
+                    )
+                    .bind(directory_full_path)
+                    .fetch_one(&conn)
+                    .await
+                    {
+                        Ok(file_number) => file_number,
+                        Err(e) => {
+                            error!(
+                                "unable to retrieve file number for directory [{}] : {e}",
+                                directory_full_path
+                            );
+                            (0,)
+                        }
+                    };
                     // insert number
                     match sqlx::query("UPDATE directories SET file_number = ? WHERE id = ?;")
                         .bind(directory_file_number.0)
