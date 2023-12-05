@@ -252,17 +252,16 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
                                     }
                                 }
                             }
-                            // TODO true page
                             false => {
                                 warn!("wrong password for user [{}]", &user.name);
-                                "wrong password".to_string()
+                                // TODO generic page for all authent failure
+                                authent_error()
                             }
                         }
                     }
                     Err(_) => {
                         warn!("user [{}] not found", &username);
-                        // TODO : true page
-                        "user not found".to_string()
+                        authent_error()
                     }
                 };
                 conn.close().await;
@@ -286,7 +285,7 @@ async fn logout_handler(
         }
         None => {
             warn!("no user found, can't logout !");
-            Html("Err".to_string())
+            error_handler()
         }
     }
 }
@@ -840,6 +839,11 @@ async fn admin_library_handler(
 // TODO better display, and redirect to `/` after 3s
 fn unauthorized_admin_response() -> Html<String> {
     Html(String::from("You are not allowed to see this page"))
+}
+
+// TODO better display, and redirect to `/` after 3s
+fn authent_error() -> String {
+    String::from("Autentication error")
 }
 
 async fn library_handler(
