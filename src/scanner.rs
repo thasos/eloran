@@ -26,6 +26,7 @@ pub struct Library {
     pub path: String,
     pub last_successfull_scan_date: i64,
     pub last_successfull_extract_date: i64,
+    pub file_count: i64,
 }
 impl Library {
     pub fn new() -> Library {
@@ -35,6 +36,7 @@ impl Library {
             path: "".to_string(),
             last_successfull_scan_date: 0,
             last_successfull_extract_date: 0,
+            file_count: 0,
         }
     }
 }

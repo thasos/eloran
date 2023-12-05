@@ -860,7 +860,11 @@ async fn library_handler(
             let list_to_display = if sub_path.is_empty() {
                 // construct library list
                 let library_list: Vec<Library> = {
-                    match sqlx::query_as("SELECT * FROM core;").fetch_all(&conn).await {
+                    // TODO move this in `sqlite` mod
+                    match sqlx::query_as("SELECT * FROM libraries;")
+                        .fetch_all(&conn)
+                        .await
+                    {
                         Ok(library_list_rows) => library_list_rows,
                         Err(e) => {
                             warn!("empty library : {}", e);

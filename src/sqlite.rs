@@ -107,11 +107,12 @@ CREATE TABLE IF NOT EXISTS reading (
   page INTEGER NOT NULL,
   UNIQUE(file_id, user_id)
 );
-CREATE TABLE IF NOT EXISTS core (
+CREATE TABLE IF NOT EXISTS libraries (
   id INTEGER PRIMARY KEY NOT NULL,
   name TEXT DEFAULT NULL UNIQUE,
   path TEXT DEFAULT NULL UNIQUE,
   scan_lock BOOLEAN DEFAULT FALSE,
+  file_count INTEGER DEFAULT NULL,
   last_successfull_scan_date INTEGER NOT NULL DEFAULT 0,
   last_successfull_extract_date INTEGER NOT NULL DEFAULT 0
 );
@@ -199,11 +200,12 @@ pub async fn create_library_path(library_path: Vec<String>) {
             path: path.to_string(),
             last_successfull_scan_date: 0,
             last_successfull_extract_date: 0,
+            file_count: 0,
         };
         debug!("set library path : {path}");
         let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
         // TODO ignore UNIQUE constraint when insert here (or add a test "if exists" ?)
-        match sqlx::query("INSERT OR IGNORE INTO core(name, path) VALUES (?, ?);")
+        match sqlx::query("INSERT OR IGNORE INTO libraries(name, path) VALUES (?, ?);")
             .bind(&library.name)
             .bind(&library.path)
             .execute(&conn)
@@ -219,7 +221,7 @@ pub async fn create_library_path(library_path: Vec<String>) {
 pub async fn delete_library_from_id(library_list: &Vec<Library>, conn: &Pool<Sqlite>) {
     for library in library_list {
         debug!("delete library id {} : {}", library.id, library.name);
-        match sqlx::query("DELETE FROM core WHERE id = ?;")
+        match sqlx::query("DELETE FROM libraries WHERE id = ?;")
             .bind(library.id)
             .execute(conn)
             .await
@@ -267,7 +269,7 @@ pub async fn get_library(
         "".to_string()
     };
     // send query
-    match sqlx::query_as(&format!("SELECT * FROM core {};", where_clause))
+    match sqlx::query_as(&format!("SELECT * FROM libraries {};", where_clause))
         .fetch_all(conn)
         .await
     {
@@ -694,7 +696,7 @@ pub async fn get_files_from_directory(
 /// get last successfull scan date in EPOCH format from database
 pub async fn get_last_successfull_scan_date(library_id: i64, conn: &Pool<Sqlite>) -> Duration {
     let last_successfull_scan_date: i64 = match sqlx::query(
-        "SELECT last_successfull_scan_date FROM core WHERE id = ?",
+        "SELECT last_successfull_scan_date FROM libraries WHERE id = ?",
     )
     .bind(library_id)
     .fetch_one(conn)
@@ -852,7 +854,7 @@ pub async fn update_last_successfull_scan_date(library_path: &i64, conn: &Pool<S
     // le at_least_one_insert_or_delete est pas bon car si rien change, c'est ok
     let now = SystemTime::now();
     let since_the_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-    match sqlx::query("UPDATE core SET last_successfull_scan_date = ? WHERE id = ?;")
+    match sqlx::query("UPDATE libraries SET last_successfull_scan_date = ? WHERE id = ?;")
         .bind(since_the_epoch.as_secs() as i64)
         .bind(library_path)
         .execute(conn)
@@ -895,7 +897,7 @@ pub async fn insert_new_dir(directory: &DirectoryInfo, ulid: Option<&str>, conn:
 
 /// check scan lock for a library, return the value of boolean in database
 pub async fn get_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<bool, String> {
-    match sqlx::query("SELECT scan_lock FROM core WHERE id = ?")
+    match sqlx::query("SELECT scan_lock FROM libraries WHERE id = ?")
         .bind(library.id)
         .fetch_one(conn)
         .await
@@ -923,7 +925,7 @@ pub async fn get_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<boo
 pub async fn toggle_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<(), String> {
     // toggle boolean in sqlite
     match sqlx::query(
-        "UPDATE core SET scan_lock = ((scan_lock | 1) - (scan_lock & 1)) WHERE id = ?",
+        "UPDATE libraries SET scan_lock = ((scan_lock | 1) - (scan_lock & 1)) WHERE id = ?",
     )
     .bind(library.id)
     .execute(conn)
@@ -943,7 +945,7 @@ pub async fn toggle_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<
 
 /// reset scan lock for all libraries
 pub async fn reset_scan_lock(conn: &Pool<Sqlite>) -> Result<(), String> {
-    match sqlx::query("UPDATE core SET scan_lock = 0")
+    match sqlx::query("UPDATE libraries SET scan_lock = 0")
         .execute(conn)
         .await
     {
