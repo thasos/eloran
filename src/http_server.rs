@@ -15,12 +15,12 @@ use axum::{
     routing::{get, post},
     Extension, Router,
 };
-use axum_login::{
-    axum_sessions::{async_session::MemoryStore, SessionLayer},
-    secrecy::SecretVec,
-    AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
-};
-use rand::Rng;
+// use axum_login::{
+//     axum_sessions::{async_session::MemoryStore, SessionLayer},
+//     secrecy::SecretVec,
+//     AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
+// };
+// use rand::Rng;
 use serde::Deserialize;
 use std::process;
 use std::{
@@ -42,20 +42,20 @@ pub struct User {
     pub name: String,
     pub role: Role,
 }
-impl AuthUser<i64, Role> for User {
-    fn get_id(&self) -> i64 {
-        self.id
-    }
-    fn get_password_hash(&self) -> SecretVec<u8> {
-        SecretVec::new(self.password_hash.clone().into())
-    }
-    fn get_role(&self) -> Option<Role> {
-        Some(Role::User)
-    }
-}
+// impl AuthUser<i64, Role> for User {
+//     fn get_id(&self) -> i64 {
+//         self.id
+//     }
+//     fn get_password_hash(&self) -> SecretVec<u8> {
+//         SecretVec::new(self.password_hash.clone().into())
+//     }
+//     fn get_role(&self) -> Option<Role> {
+//         Some(Role::User)
+//     }
+// }
 
-type AuthContext = axum_login::extractors::AuthContext<i64, User, SqliteStore<User, Role>, Role>;
-type RequireAuth = RequireAuthorizationLayer<i64, User, Role>;
+// type AuthContext = axum_login::extractors::AuthContext<i64, User, SqliteStore<User, Role>, Role>;
+// type RequireAuth = RequireAuthorizationLayer<i64, User, Role>;
 
 /// Roles
 #[derive(Debug, Clone, PartialEq, PartialOrd, sqlx::Type, Default)]
@@ -222,7 +222,8 @@ async fn search_handler(Extension(user): Extension<User>, query: String) -> impl
 }
 
 // TODO use struct, like new_user_handler()
-async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse {
+// async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse {
+async fn login_handler(body: String) -> impl IntoResponse {
     info!("get /login");
     let (username, password) = parse_credentials(&body);
     match sqlite::create_sqlite_pool().await {
@@ -239,18 +240,16 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
                         let user: User = user;
                         match verify_password(&password, &user.password_hash) {
                             true => {
-                                // auth.login(&user).await.unwrap();
-                                // login_ok(&user)
-                                match auth.login(&user).await {
-                                    Ok(_) => {
-                                        info!("user [{}] logged in", &user.name);
-                                        login_ok(&user)
-                                    }
-                                    Err(e) => {
-                                        error!("unable to log user {} : {e}", &user.name);
-                                        String::from("unable to login, see logs")
-                                    }
-                                }
+                                // match auth.login(&user).await {
+                                // Ok(_) => {
+                                info!("user [{}] logged in", &user.name);
+                                login_ok(&user)
+                                // }
+                                // Err(e) => {
+                                //     error!("unable to log user {} : {e}", &user.name);
+                                //     String::from("unable to login, see logs")
+                                // }
+                                // }
                             }
                             false => {
                                 warn!("wrong password for user [{}]", &user.name);
@@ -272,21 +271,21 @@ async fn login_handler(mut auth: AuthContext, body: String) -> impl IntoResponse
 }
 
 async fn logout_handler(
-    mut auth: AuthContext,
+    // mut auth: AuthContext,
     Extension(user): Extension<User>,
 ) -> impl IntoResponse {
     info!("get /logout : {}", &user.name);
-    auth.logout().await;
-    match &auth.current_user {
-        Some(user) => {
-            debug!("user found, logout");
-            Html(html_render::logout(user))
-        }
-        None => {
-            warn!("no user found, can't logout !");
-            error_handler()
-        }
-    }
+    // auth.logout().await;
+    // match &auth.current_user {
+    //     Some(user) => {
+    //         debug!("user found, logout");
+    //         Html(html_render::logout(user))
+    //     }
+    //     None => {
+    //         warn!("no user found, can't logout !");
+    //         error_handler()
+    //     }
+    // }
 }
 
 // #[axum::debug_handler]
@@ -1015,18 +1014,18 @@ async fn library_handler(
     }
 }
 
-// async fn get_root(Extension(user): Extension<User>) -> impl IntoResponse {
-async fn get_root(auth: AuthContext) -> impl IntoResponse {
-    match auth.current_user {
-        Some(user) => {
-            debug!("user found");
-            Html(html_render::homepage(&user))
-        }
-        None => {
-            debug!("no user found, login form");
-            Html(html_render::login_form())
-        }
-    }
+// async fn get_root(auth: AuthContext) -> impl IntoResponse {
+async fn get_root() -> impl IntoResponse {
+    // match auth.current_user {
+    //     Some(user) => {
+    //         debug!("user found");
+    //         Html(html_render::homepage(&user))
+    //     }
+    //     None => {
+    //         debug!("no user found, login form");
+    //         Html(html_render::login_form())
+    //     }
+    // }
 }
 
 async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
@@ -1074,9 +1073,9 @@ async fn get_images(Path(path): Path<String>) -> impl IntoResponse {
 // }
 
 async fn create_router() -> Router {
-    let secret = rand::thread_rng().gen::<[u8; 64]>();
+    // let secret = rand::thread_rng().gen::<[u8; 64]>();
     // TODO MemoryStore KO in prod
-    let session_store = MemoryStore::new();
+    // let session_store = MemoryStore::new();
     // --
     // test with https://docs.rs/async-sqlx-session/
     // a restart still destroy the session... why ?
@@ -1092,13 +1091,13 @@ async fn create_router() -> Router {
 
     // TODO cookies options (secure, ttl, ...) :
     // https://docs.rs/axum-sessions/0.4.1/axum_sessions/struct.SessionLayer.html#implementations
-    let session_layer = SessionLayer::new(session_store, &secret).with_secure(false);
+    // let session_layer = SessionLayer::new(session_store, &secret).with_secure(false);
     // TODO true sqlite store
     // see https://github.com/maxcountryman/axum-login/blob/main/examples/oauth/src/main.rs
     match sqlite::create_sqlite_pool().await {
-        Ok(pool) => {
-            let user_store = SqliteStore::<User, Role>::new(pool);
-            let auth_layer = AuthLayer::new(user_store, &secret);
+        Ok(_pool) => {
+            // let user_store = SqliteStore::<User, Role>::new(pool);
+            // let auth_layer = AuthLayer::new(user_store, &secret);
 
             Router::new()
                 // 🔒🔒🔒 ADMIN PROTECTED 🔒🔒🔒
@@ -1124,7 +1123,7 @@ async fn create_router() -> Router {
                 .route("/comic_page/:file_id/:page/:size", get(comic_page_handler))
                 .route("/infos/:file_id", get(infos_handler))
                 .route("/cover/:file_id", get(cover_handler))
-                .route_layer(RequireAuth::login_with_role(Role::User..))
+                // .route_layer(RequireAuth::login_with_role(Role::User..))
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
                 .route("/", get(get_root))
                 .route("/css/*path", get(get_css))
@@ -1138,8 +1137,8 @@ async fn create_router() -> Router {
                 // see https://github.com/maxcountryman/axum-login/issues/22#issuecomment-1345403733
                 .layer(
                     ServiceBuilder::new()
-                        .layer(session_layer)
-                        .layer(auth_layer)
+                        // .layer(session_layer)
+                        // .layer(auth_layer)
                         .map_response(|response: Response| {
                             if response.status() == StatusCode::UNAUTHORIZED {
                                 Redirect::to("/").into_response()
