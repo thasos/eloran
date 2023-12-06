@@ -388,24 +388,32 @@ async fn cover_handler(
                     }
                 }
             };
-            // get cover from database
-            // return default cover if problem with database or cover empty
-            let u8_cover = sqlite::get_cover_from_id(&file, &conn).await;
-            conn.close().await;
-            match u8_cover {
-                Some(cover) => {
-                    if !cover.is_empty() {
-                        (
-                            StatusCode::OK,
-                            [(header::CONTENT_TYPE, "image/jpeg")],
-                            cover,
-                        )
-                            .into_response()
-                    } else {
-                        default_cover
+            // return default cover if problem with database or cover empty or not supported format
+            match file.format.as_str() {
+                "epub" | "pdf" | "cbz" | "cbr" | "cb7" => {
+                    // get cover from database
+                    let u8_cover = sqlite::get_cover_from_id(&file, &conn).await;
+                    conn.close().await;
+                    match u8_cover {
+                        Some(cover) => {
+                            if !cover.is_empty() {
+                                (
+                                    StatusCode::OK,
+                                    [(header::CONTENT_TYPE, "image/jpeg")],
+                                    cover,
+                                )
+                                    .into_response()
+                            } else {
+                                // cover empty
+                                default_cover
+                            }
+                        }
+                        // unable to get cover from database
+                        None => default_cover,
                     }
                 }
-                None => default_cover,
+                // format not suupported
+                _ => default_cover,
             }
         }
         Err(_) => error_handler().into_response(),
