@@ -412,7 +412,6 @@ async fn cover_handler(
     }
 }
 
-// TODO filename...
 async fn download_handler(
     Extension(user): Extension<User>,
     Path(file_id): Path<String>,
@@ -426,7 +425,6 @@ async fn download_handler(
             };
             let full_path = format!("{}/{}", file.parent_path, file.name);
             dbg!(&full_path);
-            // Html(full_path).into_response()
             // possible content-types : https://www.iana.org/assignments/media-types/media-types.xhtml
             let content_type = match file.format.as_str() {
                 "epub" => "application/epub+zip",
@@ -439,6 +437,10 @@ async fn download_handler(
                 (
                     StatusCode::OK,
                     [(header::CONTENT_TYPE, content_type)],
+                    [(
+                        header::CONTENT_DISPOSITION,
+                        format!("attachment; filename=\"{}\"", &file.name),
+                    )],
                     file_content,
                 )
                     .into_response()
