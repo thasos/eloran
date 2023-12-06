@@ -204,7 +204,7 @@ pub fn file_info(
         : menu;
         div(id="infos") {
             h2(style="text-align: center;") {
-                a(href=format!("/read/{}/{}", file.id, current_page), class="navigation") : "📖 read file";
+                a(href=format!("/read/{}/{}", file.id, current_page), class="navigation", target="_blank") : "📖 read file";
                 : " | " ;
                 a(href=format!("/download/{}", file.id), class="navigation") : "⤵ download";
             }

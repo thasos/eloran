@@ -6,7 +6,8 @@ run:
     cargo run -- -v
 
 test:
-    cargo insta test --review
+    # cargo insta test --review
+    cargo test
 
 review:
     cargo insta review
