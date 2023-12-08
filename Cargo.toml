@@ -45,6 +45,7 @@ argon2 = "0.5.2"
 password-auth = "1.0.0"
 axum-login = "0.10.2"
 async-trait = "0.1.74"
+time = "0.3.30"
 # async-sqlx-session = { version = "0.4.0", features = ["sqlite"] }
 
 [dev-dependencies]

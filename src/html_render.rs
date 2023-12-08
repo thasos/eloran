@@ -154,7 +154,7 @@ pub fn login_form() -> String {
         p { : "Please login :" }
         p {
             form(accept-charset="utf-8", action="/login", method="post") {
-            input(type="text", name="user", placeholder="username", required);
+            input(type="text", name="username", placeholder="username", required);
             br;
             input(type="password", name="password", placeholder="password", required);
             br;
