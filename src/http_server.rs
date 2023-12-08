@@ -15,12 +15,6 @@ use axum::{
     routing::{get, post},
     Extension, Router,
 };
-// use axum_login::{
-//     axum_sessions::{async_session::MemoryStore, SessionLayer},
-//     secrecy::SecretVec,
-//     AuthLayer, AuthUser, RequireAuthorizationLayer, SqliteStore,
-// };
-// use rand::Rng;
 use serde::Deserialize;
 use std::process;
 use std::{
@@ -42,20 +36,6 @@ pub struct User {
     pub name: String,
     pub role: Role,
 }
-// impl AuthUser<i64, Role> for User {
-//     fn get_id(&self) -> i64 {
-//         self.id
-//     }
-//     fn get_password_hash(&self) -> SecretVec<u8> {
-//         SecretVec::new(self.password_hash.clone().into())
-//     }
-//     fn get_role(&self) -> Option<Role> {
-//         Some(Role::User)
-//     }
-// }
-
-// type AuthContext = axum_login::extractors::AuthContext<i64, User, SqliteStore<User, Role>, Role>;
-// type RequireAuth = RequireAuthorizationLayer<i64, User, Role>;
 
 /// Roles
 #[derive(Debug, Clone, PartialEq, PartialOrd, sqlx::Type, Default)]
@@ -1073,32 +1053,8 @@ async fn get_images(Path(path): Path<String>) -> impl IntoResponse {
 // }
 
 async fn create_router() -> Router {
-    // let secret = rand::thread_rng().gen::<[u8; 64]>();
-    // TODO MemoryStore KO in prod
-    // let session_store = MemoryStore::new();
-    // --
-    // test with https://docs.rs/async-sqlx-session/
-    // a restart still destroy the session... why ?
-    // I see sessions in sqlite : `SELECT * FROM async_sessions ;`
-    // --
-    // let session_store = SqliteSessionStore::new(crate::DB_URL)
-    //     .await
-    //     .expect("unable to connect to database to create auth session");
-    // session_store
-    //     .migrate()
-    //     .await
-    //     .expect("unable to create auth session in database");
-
-    // TODO cookies options (secure, ttl, ...) :
-    // https://docs.rs/axum-sessions/0.4.1/axum_sessions/struct.SessionLayer.html#implementations
-    // let session_layer = SessionLayer::new(session_store, &secret).with_secure(false);
-    // TODO true sqlite store
-    // see https://github.com/maxcountryman/axum-login/blob/main/examples/oauth/src/main.rs
     match sqlite::create_sqlite_pool().await {
         Ok(_pool) => {
-            // let user_store = SqliteStore::<User, Role>::new(pool);
-            // let auth_layer = AuthLayer::new(user_store, &secret);
-
             Router::new()
                 // 🔒🔒🔒 ADMIN PROTECTED 🔒🔒🔒
                 .route("/admin", get(admin_handler))
@@ -1106,10 +1062,7 @@ async fn create_router() -> Router {
                 .route("/admin/library/new", post(new_library_handler))
                 .route("/admin/user/:user_id", post(change_user_handler))
                 .route("/admin/user/new", post(new_user_handler))
-                // TODO does not work here, 401 despite logged as Admin...
-                // without this protection, a Role::User can go to the route /admin, but a check is done in the handler
-                // so it is a minor risk
-                // .route_layer(RequireAuth::login_with_role(Role::Admin..))
+                // TODO PROTECT HERE
                 // 🔒🔒🔒 PROTECTED 🔒🔒🔒
                 .route("/prefs", get(prefs_handler))
                 .route("/library", get(library_handler))
@@ -1123,7 +1076,7 @@ async fn create_router() -> Router {
                 .route("/comic_page/:file_id/:page/:size", get(comic_page_handler))
                 .route("/infos/:file_id", get(infos_handler))
                 .route("/cover/:file_id", get(cover_handler))
-                // .route_layer(RequireAuth::login_with_role(Role::User..))
+                // TODO PROTECT HERE
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
                 .route("/", get(get_root))
                 .route("/css/*path", get(get_css))
@@ -1148,7 +1101,7 @@ async fn create_router() -> Router {
                         }),
                 )
         }
-        // TODO ça c'est moisi...
+        // TODO true error handling and template page
         Err(_) => {
             error!("unable to connect to database, exiting");
             process::exit(1);
