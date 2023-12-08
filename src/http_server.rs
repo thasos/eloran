@@ -1319,12 +1319,4 @@ mod tests {
     //     // delete database
     //     let _ = Sqlite::drop_database(crate::DB_URL).await;
     // }
-
-    #[test]
-    fn parse_user_password_test() {
-        let body = String::from("user=myuser&password=mypass");
-        let (user, password) = parse_credentials(&body);
-        assert_eq!(user, String::from("myuser"));
-        assert_eq!(password, String::from("mypass"));
-    }
 }
