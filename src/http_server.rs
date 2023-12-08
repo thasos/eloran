@@ -10,14 +10,21 @@ use argon2::{
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Form;
+use axum::{error_handling::HandleErrorLayer, BoxError};
 use axum::{
     extract::Path,
     routing::{get, post},
     Router,
 };
+use axum_login::{
+    login_required,
+    tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
+    AuthManagerLayerBuilder,
+};
 use serde::Deserialize;
 use std::process;
 use std::{collections::VecDeque, fs};
+use time::Duration;
 use tower::ServiceBuilder;
 use urlencoding::decode;
 
@@ -1147,37 +1154,30 @@ impl AuthnBackend for Backend {
 
 pub type AuthSession = axum_login::AuthSession<Backend>;
 
-async fn protected(auth_session: AuthSession) -> impl IntoResponse {
-    match auth_session.user {
-        Some(user) => format!("username: {}", &user.name).into_response(),
-        None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-    }
-}
-use axum::{error_handling::HandleErrorLayer, BoxError};
-use axum_login::{
-    login_required,
-    tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
-    AuthManagerLayerBuilder,
-};
-use time::Duration;
 // 🔥🔥 🔥 🔥 🔥 🔥  AXUMLOGIN🔥 🔥 🔥 🔥 🔥 🔥
 
 async fn create_router() -> Router {
     match sqlite::create_sqlite_pool().await {
         Ok(pool) => {
-            // 🔥🔥 🔥 🔥 🔥 🔥  AXUMLOGIN🔥 🔥 🔥 🔥 🔥 🔥
-            let session_store = MemoryStore::default();
+            // Session layer
+            // see example : https://github.com/maxcountryman/axum-login/blob/main/examples
+            // This uses `tower-sessions` to establish a layer that will provide the session
+            // as a request extension.
+            let session_store = MemoryStore::default(); // TODO do not use MemoryStore in prod ?
             let session_layer = SessionManagerLayer::new(session_store)
                 .with_secure(false)
                 .with_expiry(Expiry::OnInactivity(Duration::days(1)));
+            // Auth service
+            // This combines the session layer with our backend to establish the auth
+            // service which will provide the auth session as a request extension.
             let backend = Backend::new(pool);
             let auth_service = ServiceBuilder::new()
                 .layer(HandleErrorLayer::new(|_: BoxError| async {
                     StatusCode::BAD_REQUEST
                 }))
                 .layer(AuthManagerLayerBuilder::new(backend, session_layer).build());
-            // 🔥🔥 🔥 🔥 🔥 🔥  AXUMLOGIN🔥 🔥 🔥 🔥 🔥 🔥
 
+            // Router creation
             Router::new()
                 // 🔒🔒🔒 ADMIN PROTECTED 🔒🔒🔒
                 .route("/admin", get(admin_handler))
@@ -1185,7 +1185,7 @@ async fn create_router() -> Router {
                 .route("/admin/library/new", post(new_library_handler))
                 .route("/admin/user/:user_id", post(change_user_handler))
                 .route("/admin/user/new", post(new_user_handler))
-                // TODO PROTECT HERE
+                // TODO PROTECT HERE : add a layer (Role::Admin) if possible
                 // 🔒🔒🔒 PROTECTED 🔒🔒🔒
                 .route("/prefs", get(prefs_handler))
                 .route("/library", get(library_handler))
@@ -1199,10 +1199,7 @@ async fn create_router() -> Router {
                 .route("/comic_page/:file_id/:page/:size", get(comic_page_handler))
                 .route("/infos/:file_id", get(infos_handler))
                 .route("/cover/:file_id", get(cover_handler))
-                // 🔥🔥 🔥 🔥 🔥 🔥  AXUMLOGIN🔥 🔥 🔥 🔥 🔥 🔥
-                .route("/prot", get(protected))
                 .route_layer(login_required!(Backend, login_url = "/login"))
-                // 🔥🔥 🔥 🔥 🔥 🔥  AXUMLOGIN🔥 🔥 🔥 🔥 🔥 🔥
                 // TODO PROTECT HERE
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
                 .route("/", get(get_root))
