@@ -218,7 +218,7 @@ async fn login_handler(body: String) -> impl IntoResponse {
                     Ok(user) => {
                         // must set the type here
                         let user: User = user;
-                        match verify_password(&password, &user.password_hash) {
+                        match verify_password2(&password, &user.password_hash) {
                             true => {
                                 // match auth.login(&user).await {
                                 // Ok(_) => {
@@ -623,7 +623,7 @@ fn hash_password(plain_text_password: &str) -> Result<String, String> {
 }
 
 /// verify given password with argon2 hashed
-fn verify_password(plain_text_password: &str, hashed_password: &str) -> bool {
+fn verify_password2(plain_text_password: &str, hashed_password: &str) -> bool {
     // this will fail if a hash is not valid in database
     match PasswordHash::new(hashed_password) {
         // return true if password match, false if not
@@ -1052,6 +1052,77 @@ async fn get_images(Path(path): Path<String>) -> impl IntoResponse {
 //     Redirect::to("/").into_response()
 // }
 
+// 🔥🔥 🔥 🔥 🔥 🔥  AXUMLOGIN🔥 🔥 🔥 🔥 🔥 🔥
+// #[derive(Debug, Clone)]
+use axum_login::{AuthUser, AuthnBackend, UserId};
+use password_auth::verify_password;
+use sqlx::SqlitePool;
+impl AuthUser for User {
+    type Id = i64;
+    fn id(&self) -> Self::Id {
+        self.id
+    }
+    fn session_auth_hash(&self) -> &[u8] {
+        self.password_hash.as_bytes() // We use the password hash as the auth
+                                      // hash--what this means
+                                      // is when the user changes their password the
+                                      // auth session becomes invalid.
+    }
+}
+#[derive(Debug, Clone, Deserialize)]
+pub struct Credentials {
+    pub username: String,
+    pub password: String,
+    pub next: Option<String>,
+}
+#[derive(Debug, Clone)]
+pub struct Backend {
+    db: SqlitePool,
+}
+impl Backend {
+    pub fn new(db: SqlitePool) -> Self {
+        Self { db }
+    }
+}
+impl AuthnBackend for Backend {
+    type User = User;
+    type Credentials = Credentials;
+    type Error = sqlx::Error;
+    async fn authenticate(
+        &self,
+        creds: Self::Credentials,
+    ) -> Result<Option<Self::User>, Self::Error> {
+        let user: Option<Self::User> = sqlx::query_as("select * from users where username = ? ")
+            .bind(creds.username)
+            .fetch_optional(&self.db)
+            .await?;
+        Ok(user.filter(|user| {
+            verify_password(creds.password, &user.password_hash)
+                .ok()
+                .is_some() // We're using password-based authentication--this
+                           // works by comparing our form input with an argon2
+                           // password hash.
+        }))
+    }
+    async fn get_user(&self, user_id: &UserId<Self>) -> Result<Option<Self::User>, Self::Error> {
+        let user = sqlx::query_as("select * from users where id = ?")
+            .bind(user_id)
+            .fetch_optional(&self.db)
+            .await?;
+        Ok(user)
+    }
+}
+
+pub type AuthSession = axum_login::AuthSession<Backend>;
+
+async fn protected(auth_session: AuthSession) -> impl IntoResponse {
+    match auth_session.user {
+        Some(user) => format!("username: {}", &user.name).into_response(),
+        None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+// 🔥🔥 🔥 🔥 🔥 🔥  AXUMLOGIN🔥 🔥 🔥 🔥 🔥 🔥
+
 async fn create_router() -> Router {
     match sqlite::create_sqlite_pool().await {
         Ok(_pool) => {
@@ -1078,7 +1149,8 @@ async fn create_router() -> Router {
                 .route("/cover/:file_id", get(cover_handler))
                 // TODO PROTECT HERE
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
-                .route("/", get(get_root))
+                // .route("/", get(get_root))
+                .route("/", get(protected))
                 .route("/css/*path", get(get_css))
                 .route("/images/*path", get(get_images)) // ⚠️  UI images, not covers
                 .route("/login", post(login_handler))
