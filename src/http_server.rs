@@ -4,7 +4,7 @@ use crate::scanner::{self, DirectoryInfo, FileInfo, Library};
 use crate::sqlite;
 
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
 };
 use axum::http::{header, StatusCode};
@@ -13,16 +13,11 @@ use axum::Form;
 use axum::{
     extract::Path,
     routing::{get, post},
-    Extension, Router,
+    Router,
 };
 use serde::Deserialize;
 use std::process;
-use std::{
-    collections::VecDeque,
-    fs,
-    net::{SocketAddr, SocketAddrV4},
-    str::FromStr,
-};
+use std::{collections::VecDeque, fs};
 use tower::ServiceBuilder;
 use urlencoding::decode;
 
@@ -43,22 +38,6 @@ pub enum Role {
     #[default]
     User,
     Admin,
-}
-
-// TODO use struct, like new_user_handler()
-fn parse_credentials(body: &str) -> (String, String) {
-    let parsed_body: Vec<&str> = body.split('&').collect();
-    let mut username = String::new();
-    let mut password = String::new();
-    for field in parsed_body {
-        if let Some(usr) = field.strip_prefix("user=") {
-            username = usr.to_string()
-        }
-        if let Some(pwd) = field.strip_prefix("password=") {
-            password = pwd.to_string()
-        }
-    }
-    (username, password)
 }
 
 fn error_handler() -> Html<String> {
@@ -342,7 +321,7 @@ async fn cover_handler(
     Path(file_id): Path<String>,
 ) -> impl IntoResponse {
     match auth_session.user {
-        Some(user) => {
+        Some(_user) => {
             match sqlite::create_sqlite_pool().await {
                 Ok(conn) => {
                     let file = match sqlite::get_files_from_file_id(&file_id, &conn).await {
@@ -598,41 +577,51 @@ async fn admin_handler(auth_session: AuthSession) -> impl IntoResponse {
 
 // TODO
 async fn prefs_handler(auth_session: AuthSession) -> impl IntoResponse {
-    info!("get /prefs : {}", &user.name);
-    Html(html_render::prefs(&user)).into_response()
+    match auth_session.user {
+        Some(user) => {
+            info!("get /prefs : {}", &user.name);
+            Html(html_render::prefs(&user)).into_response()
+        }
+        None => unauthorized_response().into_response(),
+    }
 }
 
 // TODO call add_library fn...
 // TODO use struct, like new_user_handler()
-async fn new_library_handler(Extension(user): Extension<User>, path: String) -> impl IntoResponse {
-    // only admin
-    if user.role == Role::Admin {
-        // retrieve path from body
-        let path = path.split('=').last().unwrap_or("");
-        use std::borrow::Cow;
-        let decoded_path = match decode(path) {
-            Ok(path) => path,
-            Err(_) => Cow::from(""),
+async fn new_library_handler(auth_session: AuthSession, path: String) -> impl IntoResponse {
+    match auth_session.user {
+        Some(user) => {
+            // only admin
+            if user.role == Role::Admin {
+                // retrieve path from body
+                let path = path.split('=').last().unwrap_or("");
+                use std::borrow::Cow;
+                let decoded_path = match decode(path) {
+                    Ok(path) => path,
+                    Err(_) => Cow::from(""),
+                }
+                .replace('+', " ")
+                .trim_end_matches('/')
+                .to_string();
+                // following fn wants a vec
+                let vec_decoded_path = vec![decoded_path.to_owned()];
+                // add the new path in db
+                sqlite::create_library_path(vec_decoded_path).await;
+                // return confirmation message
+                // TODO render
+                Html(html_render::simple_message(
+                    &format!(
+                        "new library added, path :  {}<br /><a href=\"/admin\">return</a>",
+                        decoded_path
+                    ),
+                    Some("/admin"),
+                ))
+                .into_response()
+            } else {
+                unauthorized_response().into_response()
+            }
         }
-        .replace('+', " ")
-        .trim_end_matches('/')
-        .to_string();
-        // following fn wants a vec
-        let vec_decoded_path = vec![decoded_path.to_owned()];
-        // add the new path in db
-        sqlite::create_library_path(vec_decoded_path).await;
-        // return confirmation message
-        // TODO render
-        Html(html_render::simple_message(
-            &format!(
-                "new library added, path :  {}<br /><a href=\"/admin\">return</a>",
-                decoded_path
-            ),
-            Some("/admin"),
-        ))
-        .into_response()
-    } else {
-        unauthorized_response().into_response()
+        None => unauthorized_response().into_response(),
     }
 }
 
@@ -651,22 +640,6 @@ fn hash_password(plain_text_password: &str) -> Result<String, String> {
     hashed_password
 }
 
-/// verify given password with argon2 hashed
-fn verify_password2(plain_text_password: &str, hashed_password: &str) -> bool {
-    // this will fail if a hash is not valid in database
-    match PasswordHash::new(hashed_password) {
-        // return true if password match, false if not
-        Ok(parsed_hash) => Argon2::default()
-            .verify_password(plain_text_password.as_bytes(), &parsed_hash)
-            .is_ok(),
-        Err(_) => {
-            // TODO handle correctly this error : notify and ask to reset password ?
-            error!("unable to verify password : wrong hash in database ?");
-            false
-        }
-    }
-}
-
 #[derive(Deserialize)]
 struct FormUser {
     name: String,
@@ -674,50 +647,55 @@ struct FormUser {
     is_admin: Option<String>,
 }
 async fn new_user_handler(
-    Extension(user): Extension<User>,
+    auth_session: AuthSession,
     Form(body): Form<FormUser>,
 ) -> impl IntoResponse {
-    if user.role == Role::Admin {
-        // TODO check if name already exists
-        match hash_password(&body.password) {
-            Ok(hashed_password) => {
-                let new_user = User {
-                    name: body.name,
-                    password_hash: hashed_password,
-                    role: {
-                        if let Some(box_content) = body.is_admin {
-                            if box_content == "on" {
-                                Role::Admin
-                            } else {
-                                Role::User
+    match auth_session.user {
+        Some(user) => {
+            if user.role == Role::Admin {
+                // TODO check if name already exists
+                match hash_password(&body.password) {
+                    Ok(hashed_password) => {
+                        let new_user = User {
+                            name: body.name,
+                            password_hash: hashed_password,
+                            role: {
+                                if let Some(box_content) = body.is_admin {
+                                    if box_content == "on" {
+                                        Role::Admin
+                                    } else {
+                                        Role::User
+                                    }
+                                } else {
+                                    Role::User
+                                }
+                            },
+                            ..User::default()
+                        };
+                        match sqlite::create_sqlite_pool().await {
+                            Ok(conn) => {
+                                sqlite::create_user(&new_user, &conn).await;
+                                Html(html_render::simple_message("user created", Some("/admin")))
+                                    .into_response()
                             }
-                        } else {
-                            Role::User
+                            Err(_) => error_handler().into_response(),
                         }
-                    },
-                    ..User::default()
-                };
-                match sqlite::create_sqlite_pool().await {
-                    Ok(conn) => {
-                        sqlite::create_user(&new_user, &conn).await;
-                        Html(html_render::simple_message("user created", Some("/admin")))
-                            .into_response()
                     }
-                    Err(_) => error_handler().into_response(),
+                    Err(_) => Html(html_render::simple_message(
+                        "unable to add new user, see logs",
+                        Some("/admin"),
+                    ))
+                    .into_response(),
                 }
+            } else {
+                Html(html_render::simple_message(
+                    "your are not allowed to create users",
+                    Some("/"),
+                ))
+                .into_response()
             }
-            Err(_) => Html(html_render::simple_message(
-                "unable to add new user, see logs",
-                Some("/admin"),
-            ))
-            .into_response(),
         }
-    } else {
-        Html(html_render::simple_message(
-            "your are not allowed to create users",
-            Some("/"),
-        ))
-        .into_response()
+        None => unauthorized_response().into_response(),
     }
 }
 
@@ -729,81 +707,88 @@ struct FormUpdateUser {
     delete: Option<String>,
 }
 async fn change_user_handler(
-    Extension(user): Extension<User>,
+    auth_session: AuthSession,
     Path(user_id): Path<String>,
     Form(body): Form<FormUpdateUser>,
 ) -> impl IntoResponse {
-    if user.role == Role::Admin {
-        match sqlite::create_sqlite_pool().await {
-            Ok(conn) => {
-                let check_user = sqlite::get_user(None, Some(&user_id), &conn).await;
-                if check_user.is_empty() {
-                    Html(html_render::simple_message(
-                        &format!("user id {} does not exists", &user_id),
-                        Some("/admin"),
-                    ))
-                    .into_response()
-                } else {
-                    let mut user_to_update = check_user.first().unwrap().to_owned();
-                    if body.delete.is_some() && user_to_update.id != 1 {
-                        sqlite::delete_user(&user_to_update, &conn).await;
-                        Html(html_render::simple_message(
-                            &format!("user {} deleted", &user_to_update.name),
-                            Some("/admin"),
-                        ))
-                        .into_response()
-                    } else if body.update.is_some() {
-                        if !body.password.is_empty() {
-                            user_to_update.password_hash = body.password;
-                        }
-                        if let Some(is_admin) = body.is_admin {
-                            if is_admin.as_str() == "on" {
-                                user_to_update.role = Role::Admin;
+    match auth_session.user {
+        Some(user) => {
+            if user.role == Role::Admin {
+                match sqlite::create_sqlite_pool().await {
+                    Ok(conn) => {
+                        let check_user = sqlite::get_user(None, Some(&user_id), &conn).await;
+                        if check_user.is_empty() {
+                            Html(html_render::simple_message(
+                                &format!("user id {} does not exists", &user_id),
+                                Some("/admin"),
+                            ))
+                            .into_response()
+                        } else {
+                            let mut user_to_update = check_user.first().unwrap().to_owned();
+                            if body.delete.is_some() && user_to_update.id != 1 {
+                                sqlite::delete_user(&user_to_update, &conn).await;
+                                Html(html_render::simple_message(
+                                    &format!("user {} deleted", &user_to_update.name),
+                                    Some("/admin"),
+                                ))
+                                .into_response()
+                            } else if body.update.is_some() {
+                                if !body.password.is_empty() {
+                                    user_to_update.password_hash = body.password;
+                                }
+                                if let Some(is_admin) = body.is_admin {
+                                    if is_admin.as_str() == "on" {
+                                        user_to_update.role = Role::Admin;
+                                    }
+                                } else if user_to_update.id != 1 {
+                                    user_to_update.role = Role::User;
+                                }
+                                sqlite::update_user(&user_to_update, &conn).await;
+                                Html(html_render::simple_message(
+                                    &format!("user {} updated", &user_to_update.name),
+                                    Some("/admin"),
+                                ))
+                                .into_response()
+                            } else {
+                                Html(html_render::simple_message(
+                                    "you can't delete admin account",
+                                    Some("/admin"),
+                                ))
+                                .into_response()
                             }
-                        } else if user_to_update.id != 1 {
-                            user_to_update.role = Role::User;
                         }
-                        sqlite::update_user(&user_to_update, &conn).await;
-                        Html(html_render::simple_message(
-                            &format!("user {} updated", &user_to_update.name),
-                            Some("/admin"),
-                        ))
-                        .into_response()
-                    } else {
-                        Html(html_render::simple_message(
-                            "you can't delete admin account",
-                            Some("/admin"),
-                        ))
-                        .into_response()
                     }
+                    Err(_) => error_handler().into_response(),
                 }
+            } else {
+                Html(html_render::simple_message(
+                    "your are not allowed to modify users",
+                    Some("/"),
+                ))
+                .into_response()
             }
-            Err(_) => error_handler().into_response(),
         }
-    } else {
-        Html(html_render::simple_message(
-            "your are not allowed to modify users",
-            Some("/"),
-        ))
-        .into_response()
+        None => unauthorized_response().into_response(),
     }
 }
 
 // TODO admin only and call delete_library fn...
 async fn admin_library_handler(
-    Extension(user): Extension<User>,
+    auth_session: AuthSession,
     Path(library_id): Path<String>,
     // TODO use struct, like new_user_handler()
     body: String,
 ) -> impl IntoResponse {
-    // only admin
-    if user.role == Role::Admin {
-        let vec_body: Vec<&str> = body.split('=').collect();
-        let option = vec_body.first().unwrap_or(&"").to_string();
-        let _value = vec_body.last().unwrap_or(&"").to_string();
-        match sqlite::create_sqlite_pool().await {
-            Ok(conn) => {
-                match option.as_str() {
+    match auth_session.user {
+        Some(user) => {
+            // only admin
+            if user.role == Role::Admin {
+                let vec_body: Vec<&str> = body.split('=').collect();
+                let option = vec_body.first().unwrap_or(&"").to_string();
+                let _value = vec_body.last().unwrap_or(&"").to_string();
+                match sqlite::create_sqlite_pool().await {
+                    Ok(conn) => {
+                        match option.as_str() {
                     "delete" => {
                         // TODO handle library.first() like for `full_rescan`
                         let library = sqlite::get_library(None, Some(&library_id), &conn).await;
@@ -845,11 +830,14 @@ async fn admin_library_handler(
                         .into_response(),
                     _ => error_handler().into_response(),
                 }
+                    }
+                    Err(_) => error_handler().into_response(),
+                }
+            } else {
+                unauthorized_response().into_response()
             }
-            Err(_) => error_handler().into_response(),
         }
-    } else {
-        unauthorized_response().into_response()
+        None => unauthorized_response().into_response(),
     }
 }
 
@@ -864,162 +852,176 @@ fn authent_error() -> String {
 }
 
 async fn library_handler(
-    Extension(user): Extension<User>,
+    auth_session: AuthSession,
     path: Option<Path<String>>,
 ) -> impl IntoResponse {
-    match sqlite::create_sqlite_pool().await {
-        Ok(conn) => {
-            // sub_path is the string after the first `/`
-            let sub_path = match &path {
-                Some(path) => format!("/{}", path.as_str()),
-                None => String::new(),
-            };
-            info!("get /library{} : {}", &sub_path, &user.name);
-
-            // if sub_path is empty : `/library` is called
-            // we must print all libraries
-            let list_to_display = if sub_path.is_empty() {
-                // construct library list
-                let library_list: Vec<Library> = {
-                    // TODO move this in `sqlite` mod
-                    match sqlx::query_as("SELECT * FROM libraries;")
-                        .fetch_all(&conn)
-                        .await
-                    {
-                        Ok(library_list_rows) => library_list_rows,
-                        Err(e) => {
-                            warn!("empty library : {}", e);
-                            Vec::new()
-                        }
-                    }
-                };
-
-                let mut library_as_directories_list: Vec<DirectoryInfo> = Vec::new();
-                for library in library_list {
-                    let library_as_dir = DirectoryInfo {
-                        id: library.id.to_string(),
-                        name: library.name.trim_start_matches('/').to_string(),
-                        parent_path: "".to_string(),
-                        file_count: Some(library.file_count),
+    match auth_session.user {
+        Some(user) => {
+            match sqlite::create_sqlite_pool().await {
+                Ok(conn) => {
+                    // sub_path is the string after the first `/`
+                    let sub_path = match &path {
+                        Some(path) => format!("/{}", path.as_str()),
+                        None => String::new(),
                     };
-                    library_as_directories_list.push(library_as_dir);
-                }
-
-                library_as_directories_list.sort();
-                html_render::LibraryDisplay {
-                    user: user.clone(),
-                    directories_list: library_as_directories_list,
-                    files_list: Vec::new(),
-                    library_id: None,
-                    library_path: "/".to_string(),
-                    current_path: Some(sub_path.clone()),
-                    search_query: None,
-                }
-            // if sub_path is not empty, we are in a specific library (`/library/foo`)
-            } else {
-                // retrieve library name from path begining
-                let (library_name, path_end) = match &path {
-                    // `/library/foo/bar/baz` become :
-                    // - library_name : `foo`
-                    // - path_rest : `bar/baz`
-                    Some(path) => {
-                        let path = path.to_string();
-                        let mut vec_splitted_path: VecDeque<&str> = path.split('/').collect();
-                        let library_name = vec_splitted_path[0].to_string();
-                        vec_splitted_path.pop_front();
-                        let end: String = vec_splitted_path
-                            .iter()
-                            .map(|s| "/".to_string() + s)
-                            .collect();
-                        (library_name, end)
-                    }
-                    None => ("".to_string(), "".to_string()),
-                };
-
-                // TODO fix this ugly block... it's a simple `let library = match....`
-                // retrieve true parent_path on disk from library name
-                let libraries_vec = sqlite::get_library(Some(&library_name), None, &conn).await;
-                let query_parent_path = match libraries_vec.first() {
-                    Some(path) => format!("{}{}", path.path.to_owned(), path_end),
-                    None => {
-                        let msg = "an empty library path should not happen, you should force a full rescan";
-                        warn!("{msg}");
-                        msg.to_string()
-                    }
-                };
-                // 🤮 remove this block, see above TODO
-                let library = match libraries_vec.first() {
-                    Some(library) => library.clone(),
-                    None => Library::default(),
-                };
-
-                // we need user_id for bookmark and read status
-                let user = sqlite::get_user(Some(&user.name), None, &conn).await;
-                let user = user.first().unwrap();
-
-                // construct lists
-                let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = {
-                    // TODO pagination ? set limit in conf
-                    let files_list: Vec<FileInfo> =
-                        match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
-                            .bind(&query_parent_path)
-                            .fetch_all(&conn)
-                            .await
-                        {
-                            Ok(files_list) => files_list,
-                            Err(e) => {
-                                warn!("empty library : {}", e);
-                                let empty_list: Vec<FileInfo> = Vec::with_capacity(0);
-                                empty_list
-                            }
-                        };
-                    // add bookmark and read status to the list
-                    let mut files_list_with_status: Vec<(FileInfo, bool, bool)> =
-                        Vec::with_capacity(files_list.capacity());
-                    for file in files_list {
-                        let bookmark_status =
-                            sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
-                        let read_status =
-                            sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
-                        files_list_with_status.push((file, bookmark_status, read_status));
-                    }
-                    files_list_with_status
-                };
-                files_list_with_status.sort();
-
-                let mut directories_list: Vec<DirectoryInfo> = {
                     info!("get /library{} : {}", &sub_path, &user.name);
-                    // TODO set limit in conf
-                    let directories_list: Vec<DirectoryInfo> =
-                        match sqlx::query_as("SELECT * FROM directories WHERE parent_path = ?;")
+
+                    // if sub_path is empty : `/library` is called
+                    // we must print all libraries
+                    let list_to_display = if sub_path.is_empty() {
+                        // construct library list
+                        let library_list: Vec<Library> = {
+                            // TODO move this in `sqlite` mod
+                            match sqlx::query_as("SELECT * FROM libraries;")
+                                .fetch_all(&conn)
+                                .await
+                            {
+                                Ok(library_list_rows) => library_list_rows,
+                                Err(e) => {
+                                    warn!("empty library : {}", e);
+                                    Vec::new()
+                                }
+                            }
+                        };
+
+                        let mut library_as_directories_list: Vec<DirectoryInfo> = Vec::new();
+                        for library in library_list {
+                            let library_as_dir = DirectoryInfo {
+                                id: library.id.to_string(),
+                                name: library.name.trim_start_matches('/').to_string(),
+                                parent_path: "".to_string(),
+                                file_count: Some(library.file_count),
+                            };
+                            library_as_directories_list.push(library_as_dir);
+                        }
+
+                        library_as_directories_list.sort();
+                        html_render::LibraryDisplay {
+                            user: user.clone(),
+                            directories_list: library_as_directories_list,
+                            files_list: Vec::new(),
+                            library_id: None,
+                            library_path: "/".to_string(),
+                            current_path: Some(sub_path.clone()),
+                            search_query: None,
+                        }
+                    // if sub_path is not empty, we are in a specific library (`/library/foo`)
+                    } else {
+                        // retrieve library name from path begining
+                        let (library_name, path_end) = match &path {
+                            // `/library/foo/bar/baz` become :
+                            // - library_name : `foo`
+                            // - path_rest : `bar/baz`
+                            Some(path) => {
+                                let path = path.to_string();
+                                let mut vec_splitted_path: VecDeque<&str> =
+                                    path.split('/').collect();
+                                let library_name = vec_splitted_path[0].to_string();
+                                vec_splitted_path.pop_front();
+                                let end: String = vec_splitted_path
+                                    .iter()
+                                    .map(|s| "/".to_string() + s)
+                                    .collect();
+                                (library_name, end)
+                            }
+                            None => ("".to_string(), "".to_string()),
+                        };
+
+                        // TODO fix this ugly block... it's a simple `let library = match....`
+                        // retrieve true parent_path on disk from library name
+                        let libraries_vec =
+                            sqlite::get_library(Some(&library_name), None, &conn).await;
+                        let query_parent_path = match libraries_vec.first() {
+                            Some(path) => format!("{}{}", path.path.to_owned(), path_end),
+                            None => {
+                                let msg = "an empty library path should not happen, you should force a full rescan";
+                                warn!("{msg}");
+                                msg.to_string()
+                            }
+                        };
+                        // 🤮 remove this block, see above TODO
+                        let library = match libraries_vec.first() {
+                            Some(library) => library.clone(),
+                            None => Library::default(),
+                        };
+
+                        // we need user_id for bookmark and read status
+                        let user = sqlite::get_user(Some(&user.name), None, &conn).await;
+                        let user = user.first().unwrap();
+
+                        // construct lists
+                        let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = {
+                            // TODO pagination ? set limit in conf
+                            let files_list: Vec<FileInfo> =
+                                match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
+                                    .bind(&query_parent_path)
+                                    .fetch_all(&conn)
+                                    .await
+                                {
+                                    Ok(files_list) => files_list,
+                                    Err(e) => {
+                                        warn!("empty library : {}", e);
+                                        let empty_list: Vec<FileInfo> = Vec::with_capacity(0);
+                                        empty_list
+                                    }
+                                };
+                            // add bookmark and read status to the list
+                            let mut files_list_with_status: Vec<(FileInfo, bool, bool)> =
+                                Vec::with_capacity(files_list.capacity());
+                            for file in files_list {
+                                let bookmark_status =
+                                    sqlite::get_flag_status("bookmark", user.id, &file.id, &conn)
+                                        .await;
+                                let read_status = sqlite::get_flag_status(
+                                    "read_status",
+                                    user.id,
+                                    &file.id,
+                                    &conn,
+                                )
+                                .await;
+                                files_list_with_status.push((file, bookmark_status, read_status));
+                            }
+                            files_list_with_status
+                        };
+                        files_list_with_status.sort();
+
+                        let mut directories_list: Vec<DirectoryInfo> = {
+                            info!("get /library{} : {}", &sub_path, &user.name);
+                            // TODO set limit in conf
+                            let directories_list: Vec<DirectoryInfo> = match sqlx::query_as(
+                                "SELECT * FROM directories WHERE parent_path = ?;",
+                            )
                             .bind(&query_parent_path)
                             .fetch_all(&conn)
                             .await
-                        {
-                            Ok(directories_list) => directories_list,
-                            Err(e) => {
-                                warn!("empty library : {}", e);
-                                let empty_list: Vec<DirectoryInfo> = Vec::new();
-                                empty_list
-                            }
+                            {
+                                Ok(directories_list) => directories_list,
+                                Err(e) => {
+                                    warn!("empty library : {}", e);
+                                    let empty_list: Vec<DirectoryInfo> = Vec::new();
+                                    empty_list
+                                }
+                            };
+                            directories_list
                         };
-                    directories_list
-                };
-                directories_list.sort();
-                conn.close().await;
-                html_render::LibraryDisplay {
-                    user: user.clone(),
-                    directories_list,
-                    files_list: files_list_with_status,
-                    library_id: Some(library.id),
-                    library_path: query_parent_path.to_string(),
-                    current_path: Some(sub_path),
-                    search_query: None,
+                        directories_list.sort();
+                        conn.close().await;
+                        html_render::LibraryDisplay {
+                            user: user.clone(),
+                            directories_list,
+                            files_list: files_list_with_status,
+                            library_id: Some(library.id),
+                            library_path: query_parent_path.to_string(),
+                            current_path: Some(sub_path),
+                            search_query: None,
+                        }
+                    };
+                    Html(html_render::library_display(list_to_display))
                 }
-            };
-            Html(html_render::library_display(list_to_display))
+                Err(_) => error_handler(),
+            }
         }
-        Err(_) => error_handler(),
+        None => unauthorized_response(),
     }
 }
 
@@ -1238,8 +1240,6 @@ async fn create_router() -> Router {
 pub async fn start_http_server(bind: &str) -> Result<(), String> {
     info!("start http server on {}", bind);
     // TODO handle error, and default value
-    let bind = SocketAddrV4::from_str(bind).unwrap();
-    let bind = SocketAddr::from(bind);
     let router = create_router();
 
     // TODO trim trailing slash
@@ -1247,7 +1247,7 @@ pub async fn start_http_server(bind: &str) -> Result<(), String> {
     // and
     // https://stackoverflow.com/questions/75355826/route-paths-with-or-without-of-trailing-slashes-in-rust-axum
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3200").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(bind).await.unwrap();
     axum::serve(listener, router.await.into_make_service())
         .await
         .expect("unable to bind http server");
