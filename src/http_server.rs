@@ -38,7 +38,7 @@ pub struct User {
 }
 
 /// Roles
-#[derive(Debug, Clone, PartialEq, PartialOrd, sqlx::Type, Default)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Default, sqlx::Type)]
 pub enum Role {
     #[default]
     User,
