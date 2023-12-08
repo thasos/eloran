@@ -12,7 +12,7 @@ readme = "README.md"
 publish = true
 
 [dependencies]
-axum = { version = "0.6", features = ["macros"] }
+axum = { version = "0.7", features = ["macros"] }
 # TODO upgrade axum-login when PR#91 will be merged (0.7 ?)
 # see https://github.com/maxcountryman/axum-login/pull/91
 # axum-login = { git = "https://github.com/maxcountryman/axum-login", rev = "bb7e5d32100bb6846412cee1f26851cc47397991", features = ["sqlite"] }
@@ -44,6 +44,7 @@ tokio = { version = "1.24", features = ["full"] }
 argon2 = "0.5.2"
 password-auth = "1.0.0"
 axum-login = "0.10.2"
+async-trait = "0.1.74"
 # async-sqlx-session = { version = "0.4.0", features = ["sqlite"] }
 
 [dev-dependencies]
