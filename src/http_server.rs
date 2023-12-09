@@ -1257,6 +1257,7 @@ mod tests {
     // use axum::http::StatusCode;
     // use axum_test_helper::TestClient;
     // use ::axum::routing::get;
+    use axum::http::HeaderName;
     use axum_test::TestServer;
     use sqlx::{migrate::MigrateDatabase, Sqlite};
 
@@ -1287,17 +1288,27 @@ mod tests {
         };
         insta::assert_yaml_snapshot!(res.text());
         // root with auth
-        let res = client.get("/").header("Cookie", &cookie).await;
+        let hdr_cookie = HeaderName::from_lowercase(b"cookie").unwrap();
+        let res = client
+            .get("/")
+            .add_header(hdr_cookie.clone(), cookie.clone())
+            .await;
         assert_eq!(res.status_code(), StatusCode::OK);
-        insta::assert_yaml_snapshot!(res.text().await);
+        insta::assert_yaml_snapshot!(res.text());
         // logout
-        let res = client.get("/logout").header("Cookie", &cookie).await;
+        let res = client
+            .get("/logout")
+            .add_header(hdr_cookie.clone(), cookie.clone())
+            .await;
         assert_eq!(res.status_code(), StatusCode::OK);
-        insta::assert_yaml_snapshot!(res.text().await);
+        insta::assert_yaml_snapshot!(res.text());
         // root without auth
-        let res = client.get("/").header("Cookie", &cookie).await;
+        let res = client
+            .get("/")
+            .add_header(hdr_cookie.clone(), cookie.clone())
+            .await;
         assert_eq!(res.status_code(), StatusCode::OK);
-        insta::assert_yaml_snapshot!(res.text().await);
+        insta::assert_yaml_snapshot!(res.text());
         // css error
         let res = client.get("/css/not_found").await;
         assert_eq!(res.status_code(), StatusCode::NOT_FOUND);
