@@ -94,12 +94,12 @@ sudo dnf install libarchive-devel.x86_64
 ## TODO
 
 - [ ] properly update file when modified
-- [ ] hash password in database !!
+- [x] hash password in database !!
 - [ ] store session in database (see `fn create_router()` in [src/http_server.rs](http_server.rs))
 - [ ] pretty error handling
-- [ ] more testing
+- [x] more testing
 - [ ] allow relative path in `library_path`
-- [ ] fix element numbers for sub directories
+- [x] fix element numbers for sub directories
 - [ ] handle `cover.jpg` files for directories (or use first file's cover ?)
 - [ ] customized css
 - [ ] upload files
@@ -108,7 +108,7 @@ sudo dnf install libarchive-devel.x86_64
 - [ ] grid or list view in preferences
 - [ ] progress bar while reading, file info, and grid view
 - [ ] easy go to page number while reading and from file info
-- [ ] read pdf in new tab
+- [x] read pdf in new tab
 - [ ] display read status in bookmarks page
 - [ ] better css 🤪
 - [ ] true ebook reading
