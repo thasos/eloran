@@ -1,4 +1,4 @@
-use crate::html_render::{self, login_ok};
+use crate::html_render;
 use crate::reader;
 use crate::scanner::{self, DirectoryInfo, FileInfo, Library};
 use crate::sqlite;
@@ -209,24 +209,20 @@ async fn login_handler(
     Form(creds): Form<Credentials>,
 ) -> impl IntoResponse {
     info!("get /login");
+    let user = match auth_session.authenticate(creds.clone()).await {
+        Ok(Some(user)) => user,
+        Ok(None) => return authent_error().into_response(),
+        Err(_) => return error_handler().into_response(),
+    };
 
-    match auth_session.authenticate(creds.clone()).await {
-        Ok(Some(user)) => {
-            if auth_session.login(&user).await.is_err() {
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-            if let Some(ref next) = creds.next {
-                Redirect::to(next).into_response()
-            } else {
-                login_ok(&user).into_response()
-            }
-        }
-        Ok(None) => {
-            // TODO log user tried ?
-            warn!("unable to authent user ?");
-            authent_error().into_response()
-        }
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    if auth_session.login(&user).await.is_err() {
+        return error_handler().into_response();
+    }
+
+    if let Some(ref next) = creds.next {
+        Redirect::to(next).into_response()
+    } else {
+        Redirect::to("/library").into_response()
     }
 }
 
@@ -1199,7 +1195,7 @@ async fn create_router() -> Router {
                 .route("/comic_page/:file_id/:page/:size", get(comic_page_handler))
                 .route("/infos/:file_id", get(infos_handler))
                 .route("/cover/:file_id", get(cover_handler))
-                .route_layer(login_required!(Backend, login_url = "/login"))
+                .route_layer(login_required!(Backend, login_url = "/"))
                 // TODO PROTECT HERE
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
                 .route("/", get(get_root))

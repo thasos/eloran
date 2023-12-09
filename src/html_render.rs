@@ -166,18 +166,6 @@ pub fn login_form() -> String {
     render(body_content, None)
 }
 
-pub fn login_ok(user: &User) -> String {
-    // TODO moche
-    let user = user.clone();
-    let body_content = box_html! {
-        p { : format!("Successfully logged in as: {}, role {:?}", user.name.as_str(), &user.role) }
-        p { a(href="/") : "return home" }
-    };
-
-    let redirect_url = "/library";
-    render(body_content, Some(redirect_url))
-}
-
 pub fn logout(user: &User) -> String {
     // TODO moche
     let user = user.clone();
