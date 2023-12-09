@@ -550,14 +550,9 @@ mod tests {
         insta::assert_yaml_snapshot!(login_form())
     }
     #[test]
-    fn test_login_ok() {
-        let user = User::default();
-        insta::assert_yaml_snapshot!(login_ok(&user))
-    }
-    #[test]
     fn test_logout() {
         let user = User::default();
-        insta::assert_yaml_snapshot!(logout(&user))
+        insta::assert_yaml_snapshot!(logout())
     }
     #[test]
     fn test_file_info() {

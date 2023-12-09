@@ -1254,60 +1254,60 @@ pub async fn start_http_server(bind: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::StatusCode;
-    use axum_test_helper::TestClient;
+    // use axum::http::StatusCode;
+    // use axum_test_helper::TestClient;
+    use ::axum::routing::get;
+    use ::axum_test::TestServer;
     use sqlx::{migrate::MigrateDatabase, Sqlite};
 
-    // TODO need to rewrite tests for AXUM 0.7
-    // #[tokio::test]
-    // async fn test_login_logout() {
-    //     // init db
-    //     let _ = sqlite::init_database().await;
-    //     sqlite::init_default_users().await;
-    //     // create router
-    //     let router = create_router();
-    //     // root without auth
-    //     let client = TestClient::new(router.await);
-    //     let res = client.get("/").send().await;
-    //     assert_eq!(res.status(), StatusCode::OK);
-    //     insta::assert_yaml_snapshot!(res.text().await);
-    //     // login
-    //     let res = client
-    //         .post("/login")
-    //         .body("user=admin&password=admin")
-    //         .send()
-    //         .await;
-    //     assert_eq!(res.status(), StatusCode::OK);
-    //     // get cookie
-    //     let res_headers = res.headers();
-    //     assert!(res_headers.contains_key("set-cookie"));
-    //     let cookie = match res_headers.get("set-cookie") {
-    //         Some(cookie) => cookie.clone(),
-    //         None => panic!(),
-    //     };
-    //     insta::assert_yaml_snapshot!(res.text().await);
-    //     // root with auth
-    //     let res = client.get("/").header("Cookie", &cookie).send().await;
-    //     assert_eq!(res.status(), StatusCode::OK);
-    //     insta::assert_yaml_snapshot!(res.text().await);
-    //     // logout
-    //     let res = client.get("/logout").header("Cookie", &cookie).send().await;
-    //     assert_eq!(res.status(), StatusCode::OK);
-    //     insta::assert_yaml_snapshot!(res.text().await);
-    //     // root without auth
-    //     let res = client.get("/").header("Cookie", &cookie).send().await;
-    //     assert_eq!(res.status(), StatusCode::OK);
-    //     insta::assert_yaml_snapshot!(res.text().await);
-    //     // css error
-    //     let res = client.get("/css/not_found").send().await;
-    //     assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    //     let res = client.get("/css/w3.css").send().await;
-    //     let res_headers = match res.headers().get("content-type") {
-    //         Some(header) => header,
-    //         None => panic!(),
-    //     };
-    //     assert_eq!(res_headers, "text/css");
-    //     // delete database
-    //     let _ = Sqlite::drop_database(crate::DB_URL).await;
-    // }
+    #[tokio::test]
+    async fn test_login_logout() {
+        // init db
+        let _ = sqlite::init_database().await;
+        sqlite::init_default_users().await;
+        // create router
+        let router = create_router();
+        // root without auth
+        let client = TestServer::new(router.await).unwrap();
+        let res = client.get("/").await;
+        assert_eq!(res.status_code(), StatusCode::OK);
+        insta::assert_yaml_snapshot!(res.text());
+        // login
+        let res = client
+            .post("/login")
+            .body("user=admin&password=admin")
+            .await;
+        assert_eq!(res.status_code(), StatusCode::OK);
+        // get cookie
+        let res_headers = res.headers();
+        assert!(res_headers.contains_key("set-cookie"));
+        let cookie = match res_headers.get("set-cookie") {
+            Some(cookie) => cookie.clone(),
+            None => panic!(),
+        };
+        insta::assert_yaml_snapshot!(res.text().await);
+        // root with auth
+        let res = client.get("/").header("Cookie", &cookie).await;
+        assert_eq!(res.status_code(), StatusCode::OK);
+        insta::assert_yaml_snapshot!(res.text().await);
+        // logout
+        let res = client.get("/logout").header("Cookie", &cookie).await;
+        assert_eq!(res.status_code(), StatusCode::OK);
+        insta::assert_yaml_snapshot!(res.text().await);
+        // root without auth
+        let res = client.get("/").header("Cookie", &cookie).await;
+        assert_eq!(res.status_code(), StatusCode::OK);
+        insta::assert_yaml_snapshot!(res.text().await);
+        // css error
+        let res = client.get("/css/not_found").await;
+        assert_eq!(res.status_code(), StatusCode::NOT_FOUND);
+        let res = client.get("/css/w3.css").await;
+        let res_headers = match res.headers().get("content-type") {
+            Some(header) => header,
+            None => panic!(),
+        };
+        assert_eq!(res_headers, "text/css");
+        // delete database
+        let _ = Sqlite::drop_database(crate::DB_URL).await;
+    }
 }
