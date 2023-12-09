@@ -228,15 +228,13 @@ async fn login_handler(
 
 async fn logout_handler(mut auth_session: AuthSession) -> impl IntoResponse {
     info!("get /logout");
-    // TODO handle error
-    let _ = auth_session.logout();
-    match auth_session.user {
-        Some(user) => {
+    match auth_session.logout() {
+        Ok(_) => {
             debug!("user found, logout");
-            Html(html_render::logout(&user))
+            Html(html_render::logout())
         }
-        None => {
-            warn!("no user found, can't logout !");
+        Err(e) => {
+            warn!("can't logout ! : {e}");
             error_handler()
         }
     }

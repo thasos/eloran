@@ -166,11 +166,10 @@ pub fn login_form() -> String {
     render(body_content, None)
 }
 
-pub fn logout(user: &User) -> String {
-    // TODO moche
-    let user = user.clone();
+pub fn logout() -> String {
     let body_content = box_html! { p
-        { : format!("Bye {}", user.name.as_str()) }
+        // { : format!("Bye {}", user.name.as_str()) }
+        { : format!("Bye !") }
         p { a(href="/") : "return home" }
     };
 
