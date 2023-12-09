@@ -40,7 +40,7 @@ async fn main() -> Result<(), String> {
         info!("start extractor routine");
         // 100 files per 10 second
         let extraction_speed = 100;
-        let sleep_time = Duration::from_secs(250);
+        let sleep_time = Duration::from_secs(15);
         scanner::extraction_routine(extraction_speed, sleep_time).await;
     });
 

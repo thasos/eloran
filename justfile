@@ -1,12 +1,13 @@
 # par défaut : lance la 1ère recipe, sinon :
-default:
+_default:
     just --list --unsorted
 
 run:
     cargo run -- -v
 
 test:
-    cargo insta test --review
+    # cargo insta test --review
+    cargo test
 
 review:
     cargo insta review
@@ -21,3 +22,8 @@ build_musl:
 
 clean:
     cargo clean
+
+podman_build:
+    podman build -t ghcr.io/thasos/eloran:latest .
+docker_build:
+    @just podman_build

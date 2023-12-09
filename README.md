@@ -45,7 +45,7 @@ podman run -d -p 0.0.0.0:3200:3200 \
     -v /host_data/eloran/sqlite:/opt/eloran/sqlite \
     -v /host_data/library:/library \
     --name eloran \
-    ghcr.io/thasos/eloran:0.1.1
+    ghcr.io/thasos/eloran:latest
 ```
 
 ### From source

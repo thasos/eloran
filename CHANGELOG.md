@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2023-??-??
 - end of beta
 
+## [0.2.0] - 2023-12-08
+- migration to axum-login 0.10 and axum 0.7
+
+## [0.1.3] - 2023-12-05
+- fix sub-directory count (#8)
+- generic page for authent error
+- store hashed password in database (#4)
+- no more config file
+- fix return link (#15)
+
 ## [0.1.2] - 2023-08-31
 - upgrade dependencies (sqlx, axum-login), fixing some CVEs
 
