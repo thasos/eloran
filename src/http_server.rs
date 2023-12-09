@@ -21,7 +21,7 @@ use axum_login::{
     tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
     AuthManagerLayerBuilder,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::process;
 use std::{collections::VecDeque, fs};
 use time::Duration;
@@ -1101,7 +1101,8 @@ impl AuthUser for User {
                                       // auth session becomes invalid.
     }
 }
-#[derive(Debug, Clone, Deserialize)]
+// Serialize is for testing with axum-test
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Credentials {
     pub username: String,
     pub password: String,
@@ -1269,16 +1270,23 @@ mod tests {
         // create router
         let router = create_router();
         // root without auth
-        let client = TestServer::new(router.await).unwrap();
+        let client = TestServer::new(router.await).expect("new TestServer");
         let res = client.get("/").await;
         assert_eq!(res.status_code(), StatusCode::OK);
         insta::assert_yaml_snapshot!(res.text());
         // login
+        let cred = Credentials {
+            username: "admin".to_string(),
+            password: "admin".to_string(),
+            next: None,
+        };
         let res = client
             .post("/login")
-            .form("user=admin&password=admin")
+            // panic if form is not deserializable...
+            .form(&cred)
             .await;
-        assert_eq!(res.status_code(), StatusCode::OK);
+        // 303 here...
+        assert_eq!(res.status_code(), StatusCode::SEE_OTHER);
         // get cookie
         let res_headers = res.headers();
         assert!(res_headers.contains_key("set-cookie"));
@@ -1288,7 +1296,7 @@ mod tests {
         };
         insta::assert_yaml_snapshot!(res.text());
         // root with auth
-        let hdr_cookie = HeaderName::from_lowercase(b"cookie").unwrap();
+        let hdr_cookie = HeaderName::from_lowercase(b"cookie").expect("create cookie");
         let res = client
             .get("/")
             .add_header(hdr_cookie.clone(), cookie.clone())

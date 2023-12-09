@@ -551,7 +551,6 @@ mod tests {
     }
     #[test]
     fn test_logout() {
-        let user = User::default();
         insta::assert_yaml_snapshot!(logout())
     }
     #[test]
