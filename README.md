@@ -59,7 +59,7 @@ just build
 target/x86_64-unknown-linux-gnu/release/eloran
 ```
 
-If you do note use [just](https://github.com/casey/just), use it 😁 or just launch `cargo build --release`
+If you don't use [just](https://github.com/casey/just), use it 😁 or just launch `cargo build --release`
 
 ### Build dependencies
 
