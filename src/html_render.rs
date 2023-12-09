@@ -154,7 +154,7 @@ pub fn login_form() -> String {
         p { : "Please login :" }
         p {
             form(accept-charset="utf-8", action="/login", method="post") {
-            input(type="text", name="user", placeholder="username", required);
+            input(type="text", name="username", placeholder="username", required);
             br;
             input(type="password", name="password", placeholder="password", required);
             br;
@@ -166,23 +166,10 @@ pub fn login_form() -> String {
     render(body_content, None)
 }
 
-pub fn login_ok(user: &User) -> String {
-    // TODO moche
-    let user = user.clone();
-    let body_content = box_html! {
-        p { : format!("Successfully logged in as: {}, role {:?}", user.name.as_str(), &user.role) }
-        p { a(href="/") : "return home" }
-    };
-
-    let redirect_url = "/library";
-    render(body_content, Some(redirect_url))
-}
-
-pub fn logout(user: &User) -> String {
-    // TODO moche
-    let user = user.clone();
+pub fn logout() -> String {
     let body_content = box_html! { p
-        { : format!("Bye {}", user.name.as_str()) }
+        // { : format!("Bye {}", user.name.as_str()) }
+        { : format!("Bye !") }
         p { a(href="/") : "return home" }
     };
 
@@ -204,7 +191,7 @@ pub fn file_info(
         : menu;
         div(id="infos") {
             h2(style="text-align: center;") {
-                a(href=format!("/read/{}/{}", file.id, current_page), class="navigation") : "📖 read file";
+                a(href=format!("/read/{}/{}", file.id, current_page), class="navigation", target="_blank") : "📖 read file";
                 : " | " ;
                 a(href=format!("/download/{}", file.id), class="navigation") : "⤵ download";
             }
@@ -563,14 +550,8 @@ mod tests {
         insta::assert_yaml_snapshot!(login_form())
     }
     #[test]
-    fn test_login_ok() {
-        let user = User::default();
-        insta::assert_yaml_snapshot!(login_ok(&user))
-    }
-    #[test]
     fn test_logout() {
-        let user = User::default();
-        insta::assert_yaml_snapshot!(logout(&user))
+        insta::assert_yaml_snapshot!(logout())
     }
     #[test]
     fn test_file_info() {
