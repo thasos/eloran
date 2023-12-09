@@ -1256,8 +1256,8 @@ mod tests {
     use super::*;
     // use axum::http::StatusCode;
     // use axum_test_helper::TestClient;
-    use ::axum::routing::get;
-    use ::axum_test::TestServer;
+    // use ::axum::routing::get;
+    use axum_test::TestServer;
     use sqlx::{migrate::MigrateDatabase, Sqlite};
 
     #[tokio::test]
@@ -1275,7 +1275,7 @@ mod tests {
         // login
         let res = client
             .post("/login")
-            .body("user=admin&password=admin")
+            .form("user=admin&password=admin")
             .await;
         assert_eq!(res.status_code(), StatusCode::OK);
         // get cookie
@@ -1285,7 +1285,7 @@ mod tests {
             Some(cookie) => cookie.clone(),
             None => panic!(),
         };
-        insta::assert_yaml_snapshot!(res.text().await);
+        insta::assert_yaml_snapshot!(res.text());
         // root with auth
         let res = client.get("/").header("Cookie", &cookie).await;
         assert_eq!(res.status_code(), StatusCode::OK);
