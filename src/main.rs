@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 mod conf;
 mod html_render;
 mod http_server;
