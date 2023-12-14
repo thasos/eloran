@@ -12,7 +12,7 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Form;
 use axum::{error_handling::HandleErrorLayer, BoxError};
 use axum::{
-    extract::Path,
+    extract::{Path, State},
     routing::{get, post},
     Router,
 };
@@ -1038,17 +1038,18 @@ async fn get_root(auth_session: AuthSession) -> impl IntoResponse {
     }
 }
 
-/// serve css (custom file can be loaded)
-async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
-    info!("get /css/{}", &path);
+/// create css from binary if not found on disk
+// TODO add a clap option to specify css directory
+// TODO use struct ?
+fn create_css() -> (String, String) {
     // original css file
     let eloran_css_original = include_bytes!("css/eloran.css");
-    let eloran_css_original = match std::str::from_utf8(eloran_css_original) {
+    let mut eloran_css = match std::str::from_utf8(eloran_css_original) {
         Ok(eloran_css) => eloran_css.to_string(),
         Err(_) => String::from(""),
     };
     let w3_css_original = include_bytes!("css/w3.css");
-    let w3_css_original = match std::str::from_utf8(w3_css_original) {
+    let mut w3_css = match std::str::from_utf8(w3_css_original) {
         Ok(w3_css) => w3_css.to_string(),
         Err(_) => String::from(""),
     };
@@ -1060,7 +1061,9 @@ async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
             let filename = file.file_name();
             let filename = filename.to_str().unwrap();
             if filename.contains("eloran.css") {
-                println!("ok");
+                eloran_css = fs::read_to_string(file.path()).unwrap();
+            } else if filename.contains("w3.css") {
+                w3_css = fs::read_to_string(file.path()).unwrap();
             } else {
                 warn!(
                     "css file must be named eloran.css or w3.css, file [{}] will be ignored",
@@ -1069,21 +1072,27 @@ async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
             }
         }
     }
+    (eloran_css, w3_css)
+}
+
+/// serve css (custom file can be loaded)
+async fn get_css(
+    State(css): State<(String, String)>,
+    Path(path): Path<String>,
+) -> impl IntoResponse {
+    info!("get /css/{}", &path);
+    let eloran_css = css.0;
+    let w3_css = css.1;
     // return css if found
     match path.as_str() {
         "eloran.css" => (
             StatusCode::OK,
             [(header::CONTENT_TYPE, "text/css")],
-            eloran_css_original,
+            eloran_css,
         )
             .into_response(),
-        "w3.css" => (
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, "text/css")],
-            w3_css_original,
-        )
-            .into_response(),
-        // useless : the html headers uses onla eloran.css and w3.css, but perhaps in the future...
+        "w3.css" => (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], w3_css).into_response(),
+        // useless : the html headers uses only eloran.css and w3.css, but perhaps in the future...
         _ => {
             let css_file_content = fs::read_to_string(format!("src/css/{path}"));
             match css_file_content {
@@ -1216,6 +1225,9 @@ async fn create_router() -> Router {
                 }))
                 .layer(AuthManagerLayerBuilder::new(backend, session_layer).build());
 
+            // custom css handler, will be passed to the css route
+            let css = create_css();
+
             // Router creation
             Router::new()
                 // 🔒🔒🔒 ADMIN PROTECTED 🔒🔒🔒
@@ -1243,6 +1255,7 @@ async fn create_router() -> Router {
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
                 .route("/", get(get_root))
                 .route("/css/*path", get(get_css))
+                .with_state(css)
                 .route("/images/*path", get(get_images)) // ⚠️  UI images, not covers
                 .route("/login", post(login_handler))
                 .route("/logout", get(logout_handler))
