@@ -23,7 +23,7 @@ async fn main() -> Result<(), String> {
 
     // databases
     sqlite::init_database().await?;
-    // TODO remove dbg users when install page is done
+    // TODO remove defaults users when install page is done
     sqlite::init_default_users().await;
     if conf.library_path.is_some() {
         sqlite::create_library_path(conf.library_path.unwrap()).await;
