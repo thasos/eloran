@@ -70,6 +70,7 @@ pub async fn init_database() -> Result<(), String> {
         Ok(conn) => Ok(conn),
         Err(e) => Err(format!("unable to connect to database : {e}")),
     }?;
+    // TODO create a separated .sql file, and support migrations
     let schema = r#"
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY NOT NULL,
