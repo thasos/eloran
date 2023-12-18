@@ -12,7 +12,7 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Form;
 use axum::{error_handling::HandleErrorLayer, BoxError};
 use axum::{
-    extract::Path,
+    extract::{Path, State},
     routing::{get, post},
     Router,
 };
@@ -22,8 +22,7 @@ use axum_login::{
     AuthManagerLayerBuilder,
 };
 use serde::{Deserialize, Serialize};
-use std::process;
-use std::{collections::VecDeque, fs};
+use std::{collections::VecDeque, fs, process};
 use time::Duration;
 use tower::ServiceBuilder;
 use urlencoding::decode;
@@ -1039,17 +1038,73 @@ async fn get_root(auth_session: AuthSession) -> impl IntoResponse {
     }
 }
 
-async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
+/// create css from binary if not found on disk
+// TODO add a clap option to specify css directory
+// TODO use struct ?
+fn create_css() -> (String, String) {
+    // original css file
+    let eloran_css_original = include_bytes!("css/eloran.css");
+    let mut eloran_css = match std::str::from_utf8(eloran_css_original) {
+        Ok(eloran_css) => eloran_css.to_string(),
+        Err(_) => String::from(""),
+    };
+    let w3_css_original = include_bytes!("css/w3.css");
+    let mut w3_css = match std::str::from_utf8(w3_css_original) {
+        Ok(w3_css) => w3_css.to_string(),
+        Err(_) => String::from(""),
+    };
+    // if custom css exists, use them
+    let css_dir = std::path::Path::new("custom_css");
+    if css_dir.is_dir() {
+        let css_files = css_dir.read_dir().unwrap();
+        for file in css_files.flatten() {
+            let filename = file.file_name();
+            let filename = filename.to_str().unwrap();
+            if filename.contains("eloran.css") {
+                eloran_css = fs::read_to_string(file.path()).unwrap();
+            } else if filename.contains("w3.css") {
+                w3_css = fs::read_to_string(file.path()).unwrap();
+            } else {
+                warn!(
+                    "css file must be named eloran.css or w3.css, file [{}] will be ignored",
+                    filename
+                );
+            }
+        }
+    }
+    (eloran_css, w3_css)
+}
+
+/// serve css (custom file can be loaded)
+async fn get_css(
+    State(css): State<(String, String)>,
+    Path(path): Path<String>,
+) -> impl IntoResponse {
     info!("get /css/{}", &path);
-    // TODO include_bytes pour la base ? (cf monit-agregator)
-    let css_file_content = fs::read_to_string(format!("src/css/{path}"));
-    // TODO tests content pour 200 ?
-    match css_file_content {
-        Ok(css) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], css).into_response(),
-        Err(_) => {
-            error!("css {path} not found");
-            // TODO true 404
-            (StatusCode::NOT_FOUND, "css not found").into_response()
+    let eloran_css = css.0;
+    let w3_css = css.1;
+    // return css if found
+    match path.as_str() {
+        "eloran.css" => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/css")],
+            eloran_css,
+        )
+            .into_response(),
+        "w3.css" => (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], w3_css).into_response(),
+        // useless : the html headers uses only eloran.css and w3.css, but perhaps in the future...
+        _ => {
+            let css_file_content = fs::read_to_string(format!("src/css/{path}"));
+            match css_file_content {
+                Ok(css) => {
+                    (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], css).into_response()
+                }
+                Err(_) => {
+                    error!("css {path} not found");
+                    // TODO true 404 page ?
+                    (StatusCode::NOT_FOUND, "css not found").into_response()
+                }
+            }
         }
     }
 }
@@ -1149,8 +1204,6 @@ impl AuthnBackend for Backend {
 
 pub type AuthSession = axum_login::AuthSession<Backend>;
 
-// 🔥🔥 🔥 🔥 🔥 🔥  AXUMLOGIN🔥 🔥 🔥 🔥 🔥 🔥
-
 async fn create_router() -> Router {
     match sqlite::create_sqlite_pool().await {
         Ok(pool) => {
@@ -1171,6 +1224,9 @@ async fn create_router() -> Router {
                     StatusCode::BAD_REQUEST
                 }))
                 .layer(AuthManagerLayerBuilder::new(backend, session_layer).build());
+
+            // custom css handler, will be passed to the css route
+            let css = create_css();
 
             // Router creation
             Router::new()
@@ -1195,15 +1251,15 @@ async fn create_router() -> Router {
                 .route("/infos/:file_id", get(infos_handler))
                 .route("/cover/:file_id", get(cover_handler))
                 .route_layer(login_required!(Backend, login_url = "/"))
-                // TODO PROTECT HERE
+                // TODO PROTECT HERE : add a layer (Role::User) if possible
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
                 .route("/", get(get_root))
                 .route("/css/*path", get(get_css))
+                .with_state(css)
                 .route("/images/*path", get(get_images)) // ⚠️  UI images, not covers
                 .route("/login", post(login_handler))
                 .route("/logout", get(logout_handler))
-                // TODO useless ?
-                // .fallback(fallback)
+                // .fallback(fallback) // TODO useless ?
                 // ---
                 // layers for redirect when not logged
                 // see https://github.com/maxcountryman/axum-login/issues/22#issuecomment-1345403733

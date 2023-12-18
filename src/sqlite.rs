@@ -70,6 +70,7 @@ pub async fn init_database() -> Result<(), String> {
         Ok(conn) => Ok(conn),
         Err(e) => Err(format!("unable to connect to database : {e}")),
     }?;
+    // TODO create a separated .sql file, and support migrations
     let schema = r#"
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY NOT NULL,
@@ -135,7 +136,7 @@ CREATE TABLE IF NOT EXISTS libraries (
 // TODO delete this when install page will be done
 pub async fn init_default_users() {
     let conn = SqlitePool::connect(crate::DB_URL).await.unwrap();
-    // the hash is `admin`
+    // default password is `admin`
     let default_users = r#"
 INSERT OR IGNORE INTO users(id, password_hash, name, role)
 VALUES (1,'$argon2i$v=19$m=4096,t=3,p=1$c29tZXNhbHQ$25Cg7w5R2XkXVltwpaPORfIHQoK0w3IcIpeW+4X41kY','admin','Admin');
