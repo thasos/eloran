@@ -24,8 +24,8 @@ FROM docker.io/alpine:3.18
 WORKDIR /opt/eloran
 COPY --from=builder /opt/eloran/target/x86_64-unknown-linux-musl/release/eloran /opt/eloran
 # TODO put thoses default files directly in the binary
-COPY ./src/css ./src/css
-COPY ./src/images ./src/images
+# COPY ./src/css ./src/css
+COPY ./src/images ./images
 
 # poppler for pdf cover generation, libarchive for uncompression
 RUN apk --no-cache add poppler-glib libarchive
