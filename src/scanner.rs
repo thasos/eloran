@@ -878,9 +878,7 @@ mod tests {
     use super::*;
     // use crate::sqlite;
     // use sqlx::{migrate::MigrateDatabase, Sqlite};
-    use std::fs::{self, File};
     use std::io::prelude::*;
-    use std::path::Path;
 
     fn create_fake_library(library_path: &Path) -> std::io::Result<()> {
         fs::create_dir(library_path)?;
