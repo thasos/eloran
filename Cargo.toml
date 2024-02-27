@@ -34,8 +34,8 @@ libc = "0.2.140"
 # clap = { version = "4.1.13", default-features = false, features = ["std"] }
 clap = "4.1.13"
 config = "0.13.3"
-poppler-rs = "0.21.0"
-cairo-rs = { version = "0.17.0", features = ["png", "pdf"] }
+poppler-rs = "0.21"
+cairo-rs = { version = "0.17", features = ["png", "pdf"] }
 rand = { version = "0.8", features = ["min_const_gen"] }
 urlencoding = "2.1.2"
 serde = "1.0.164"

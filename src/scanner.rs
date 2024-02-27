@@ -799,10 +799,13 @@ pub async fn extract_comic_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
 }
 
 pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
+    dbg!("1");
     let archive_path = &format!("{}/{}", file.parent_path, file.name);
+    dbg!("2");
     if let Ok(compressed_comic_file) = File::open(archive_path) {
         // get images list from archive
         let comic_file_list = extract_comic_image_list(&compressed_comic_file);
+        dbg!("3");
         // set path file wanted from page index
         let image_path_in_achive = match comic_file_list.first() {
             Some(path) => path,
@@ -811,19 +814,36 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
                 ""
             }
         };
+        dbg!("4");
         // uncompress corresponding image
         let mut vec_cover: Vec<u8> = Vec::new();
         // RAR need to reopen file... why ? and why rar only ?
-        let compressed_comic_file = File::open(archive_path).expect("file open");
-        match uncompress_archive_file(&compressed_comic_file, &mut vec_cover, image_path_in_achive)
-        {
-            Ok(_) => (),
-            Err(e) => warn!(
-                "unable to extract path [{}] from file [{}] : {e}",
-                image_path_in_achive, file.name
-            ),
-        }
+        match File::open(archive_path) {
+            Ok(compressed_comic_file) => {
+                dbg!("5");
+                // TODO HEEEEERE 🔥🔥🔥🔥🔥🔥🔥🔥🔥
+                match uncompress_archive_file(
+                    &compressed_comic_file,
+                    &mut vec_cover,
+                    image_path_in_achive,
+                ) {
+                    Ok(_) => (),
+                    Err(e) => warn!(
+                        "unable to extract path [{}] from file [{}] : {e}",
+                        image_path_in_achive, file.name
+                    ),
+                }
+                // TODO HEEEEERE 🔥🔥🔥🔥🔥🔥🔥🔥🔥
+            }
+            Err(e) => {
+                warn!(
+                    "unable to open path [{}] from file [{}] : {e}",
+                    image_path_in_achive, file.name
+                );
+            }
+        };
 
+        dbg!("6");
         match image::load_from_memory(&vec_cover) {
             // match image::load_from_memory(&cover.0) {
             Ok(img) => {
@@ -836,6 +856,7 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
             }
         }
     } else {
+        dbg!("7");
         None
     }
 }
