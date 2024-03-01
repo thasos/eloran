@@ -399,7 +399,6 @@ async fn download_handler(
                         None => FileInfo::new(),
                     };
                     let full_path = format!("{}/{}", file.parent_path, file.name);
-                    dbg!(&full_path);
                     // possible content-types : https://www.iana.org/assignments/media-types/media-types.xhtml
                     let content_type = match file.format.as_str() {
                         "epub" => "application/epub+zip",
