@@ -816,7 +816,8 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
         // RAR need to reopen file... why ? and why rar only ?
         match File::open(archive_path) {
             Ok(compressed_comic_file) => {
-                // TODO HEEEEERE 🔥🔥🔥🔥🔥🔥🔥🔥🔥
+                // ⚠ unsafe code here from compress-tools
+                // TODO change lib ?
                 match uncompress_archive_file(
                     &compressed_comic_file,
                     &mut vec_cover,
@@ -828,7 +829,6 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
                         image_path_in_achive, file.name
                     ),
                 }
-                // TODO HEEEEERE 🔥🔥🔥🔥🔥🔥🔥🔥🔥
             }
             Err(e) => {
                 warn!(
