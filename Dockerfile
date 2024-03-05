@@ -25,7 +25,7 @@ WORKDIR /opt/eloran
 COPY --from=builder /opt/eloran/target/x86_64-unknown-linux-musl/release/eloran /opt/eloran
 # TODO put thoses default files directly in the binary
 # COPY ./src/css ./src/css
-COPY ./src/images ./images
+COPY ./src/images ./src/images
 
 # poppler for pdf cover generation, libarchive for uncompression
 RUN apk --no-cache add poppler-glib libarchive
@@ -34,7 +34,8 @@ RUN apk --no-cache add poppler-glib libarchive
 RUN addgroup -g 10666 eloran \
  && adduser -D -u 10666 -G eloran eloran
 RUN mkdir /opt/eloran/sqlite \
- && chown eloran /opt/eloran/sqlite
+ && chown eloran /opt/eloran/sqlite \
+ && chmod +r /opt/eloran/src/images/*
 USER eloran
 
 # start
