@@ -249,6 +249,7 @@ async fn infos_handler(
         Some(user) => {
             match sqlite::create_sqlite_pool().await {
                 Ok(conn) => {
+                    // if the file is not found in database, create new
                     let file = match sqlite::get_files_from_file_id(&file_id, &conn).await {
                         Some(file) => file,
                         None => FileInfo::new(),
@@ -265,6 +266,7 @@ async fn infos_handler(
                     let up_link = file
                         .parent_path
                         .replace(library_path, &format!("/library/{library_name}"));
+                    // scan file if needed
                     if file.scan_me == 1 {
                         scanner::extract_all(&file, &conn).await;
                     }
@@ -397,7 +399,6 @@ async fn download_handler(
                         None => FileInfo::new(),
                     };
                     let full_path = format!("{}/{}", file.parent_path, file.name);
-                    dbg!(&full_path);
                     // possible content-types : https://www.iana.org/assignments/media-types/media-types.xhtml
                     let content_type = match file.format.as_str() {
                         "epub" => "application/epub+zip",

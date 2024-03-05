@@ -814,15 +814,29 @@ pub fn extract_comic_cover(file: &FileInfo) -> Option<image::DynamicImage> {
         // uncompress corresponding image
         let mut vec_cover: Vec<u8> = Vec::new();
         // RAR need to reopen file... why ? and why rar only ?
-        let compressed_comic_file = File::open(archive_path).expect("file open");
-        match uncompress_archive_file(&compressed_comic_file, &mut vec_cover, image_path_in_achive)
-        {
-            Ok(_) => (),
-            Err(e) => warn!(
-                "unable to extract path [{}] from file [{}] : {e}",
-                image_path_in_achive, file.name
-            ),
-        }
+        match File::open(archive_path) {
+            Ok(compressed_comic_file) => {
+                // ⚠ unsafe code here from compress-tools
+                // TODO change lib ?
+                match uncompress_archive_file(
+                    &compressed_comic_file,
+                    &mut vec_cover,
+                    image_path_in_achive,
+                ) {
+                    Ok(_) => (),
+                    Err(e) => warn!(
+                        "unable to extract path [{}] from file [{}] : {e}",
+                        image_path_in_achive, file.name
+                    ),
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "unable to open path [{}] from file [{}] : {e}",
+                    image_path_in_achive, file.name
+                );
+            }
+        };
 
         match image::load_from_memory(&vec_cover) {
             // match image::load_from_memory(&cover.0) {
@@ -878,9 +892,7 @@ mod tests {
     use super::*;
     // use crate::sqlite;
     // use sqlx::{migrate::MigrateDatabase, Sqlite};
-    use std::fs::{self, File};
     use std::io::prelude::*;
-    use std::path::Path;
 
     fn create_fake_library(library_path: &Path) -> std::io::Result<()> {
         fs::create_dir(library_path)?;

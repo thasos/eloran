@@ -16,10 +16,9 @@ axum = { version = "0.7", features = ["macros"] }
 # TODO upgrade axum-login when PR#91 will be merged (0.7 ?)
 # see https://github.com/maxcountryman/axum-login/pull/91
 # axum-login = { git = "https://github.com/maxcountryman/axum-login", rev = "bb7e5d32100bb6846412cee1f26851cc47397991", features = ["sqlite"] }
-horrorshow = "0.8.4"
-http = "0.2.8"
+horrorshow = "0.8.4" # alt : https://github.com/lambda-fairy/maud ?
 body = "0.1.1"
-env_logger = "0.10.0"
+env_logger = "0.11"
 log = "0.4.17"
 # need tower for redirect when not logged in
 tower = "0.4.13"
@@ -28,14 +27,14 @@ jwalk = "0.8.1"
 image = "0.24.5"
 epub = "2.0.0"
 # TODO remove b64
-base64 = "0.21.0"
-compress-tools = "0.14.0"
+base64 = "0.22"
+compress-tools = "0.14"
 libc = "0.2.140"
 # clap = { version = "4.1.13", default-features = false, features = ["std"] }
 clap = "4.1.13"
-config = "0.13.3"
-poppler-rs = "0.21.0"
-cairo-rs = { version = "0.17.0", features = ["png", "pdf"] }
+config = "0.14"
+poppler-rs = "0.23"
+cairo-rs = { version = "0.19", features = ["png", "pdf"] }
 rand = { version = "0.8", features = ["min_const_gen"] }
 urlencoding = "2.1.2"
 serde = "1.0.164"
