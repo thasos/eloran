@@ -61,3 +61,7 @@ codegen-units = 1
 
 [profile.dev.package]
 insta.opt-level = 3
+
+[profile.dev]
+debug = 0
+strip = "debuginfo"
