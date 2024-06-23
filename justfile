@@ -27,3 +27,6 @@ podman_build:
     podman build -t ghcr.io/thasos/eloran:latest .
 docker_build:
     @just podman_build
+
+nixshell:
+    nix-shell shell.nix --run 'zsh --emulate zsh'
