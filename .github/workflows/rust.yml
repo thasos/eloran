@@ -17,9 +17,9 @@ jobs:
 
     steps:
     - name: Install build deps
-      run: sudo apt-get install -y libarchive-dev libcairo2-dev libpoppler-glib-dev just
-    - name: Install grass compiler
-      run: cargo install grass
+      run: sudo apt-get install -y libarchive-dev libcairo2-dev libpoppler-glib-dev
+    - name: Install grass compiler and just
+      run: cargo install grass just
     - uses: actions/checkout@v4
     - name: Build
       run: just build
