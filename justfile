@@ -3,20 +3,30 @@ _default:
     just --list --unsorted
 
 run:
+    just grass_compile
     cargo run -- -v
 
 test:
-    # cargo insta test --review
+    just grass_compile
+    # `cargo-insta test` will fail because of arg parse, see https://github.com/mitsuhiko/insta/issues/473
+    # cargo-insta test --review
     cargo test
 
 review:
-    cargo insta review
+    just grass_compile
+    cargo-insta review
+
+# compile css from grass files
+grass_compile:
+    grass --style compressed sass/main.scss src/css/eloran.css
 
 build:
+    just grass_compile
     cargo +nightly build --release -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target x86_64-unknown-linux-gnu
 
 export PKG_CONFIG_SYSROOT_DIR := "/home/${USER}/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-musl"
 build_musl:
+    just grass_compile
     RUSTFLAGS='-C target-feature=-crt-static'
     cargo +nightly build --release -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target x86_64-unknown-linux-musl
 
@@ -25,8 +35,9 @@ clean:
 
 podman_build:
     podman build -t ghcr.io/thasos/eloran:latest .
+# fake, use podman
 docker_build:
     @just podman_build
 
-nixshell:
-    nix-shell shell.nix --run 'zsh --emulate zsh'
+nixshell shell='zsh':
+    nix develop --command {{shell}}

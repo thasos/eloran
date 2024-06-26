@@ -1,0 +1,48 @@
+button.rounded-button {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  width: 50px;
+  height: 50px;
+
+  background-color: var(--color-page-1);
+  border-radius: 50%;
+  border: none;
+  @include bordered;
+  @include hovered("hover");
+  cursor: pointer;
+
+  > label {
+    cursor: pointer;
+    width: 42px;
+    height: 42px;
+    position: relative;
+    text-align: center;
+  }
+}
+
+@mixin selected-rounded-button() {
+  box-shadow: none;
+  border-color: transparent;
+  background-color: transparent;
+  transform: none;
+
+  > span.selected-rounded-button {
+    display: block;
+  }
+}
+
+span.selected-rounded-button {
+  display: none;
+  position: absolute;
+  background-image: url(/images/selected-rounded-button.svgz);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  z-index: -1;
+  width: 60px;
+  height: 60px;
+  left: -6px;
+}

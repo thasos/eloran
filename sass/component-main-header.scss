@@ -1,0 +1,45 @@
+body > main > header {
+  height: 136px;
+  background-color: var(--color-theme-1);
+  border-top: 2px solid #000000;
+  border-bottom: 5px solid #000000;
+
+  img {
+    position: absolute;
+    width: 210px;
+    left: 30px;
+    top: 128px;
+  }
+
+  h1 {
+    font-size: 90px;
+    font-weight: 900;
+    color: white;
+    text-shadow:
+      5px 5px 0 #000,
+      2px 2px 0 #000,
+      -2px 2px 0 #000,
+      -2px -2px 0 #000,
+      2px -2px 0 #000;
+    line-height: 136px;
+    margin-left: 260px;
+  }
+
+  @media only screen and (max-width: 799px) {
+    height: 100px;
+
+    img {
+      position: absolute;
+      width: 150px;
+      left: 30px;
+      top: 128px;
+    }
+
+    h1 {
+      font-size: 60px;
+      line-height: 100px;
+      margin-left: 190px;
+    }
+  }
+
+}

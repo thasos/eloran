@@ -8,7 +8,7 @@ I used [Ubooquity](https://vaemendis.net/ubooquity/) during a few years, but unf
 
 I tried some alternatives :
 - [Komga](https://komga.org) : best project here I think, but no "folder view" 😥
-- [Tanoshi](https://github.com/faldez/tanoshi) : works well, in rust too 🦀🚀, but no support for ebooks
+- [Tanoshi](https://github.com/faldez/tanoshi) ☠ : works well, in rust too 🦀🚀, but no support for ebooks
 - [Calibre web](https://github.com/janeczku/calibre-web) or [BicBucStriim](https://github.com/rvolz/BicBucStriim) : I just can't use Calibre's classification system
 - [Kavita](https://github.com/Kareadita/Kavita) : nice project too, but I don't like the Collections system (feels like Calibre)
 - [Nextcloud epubreader](https://apps.nextcloud.com/apps/epubreader) : an old app, but it doesn't work with most of my collection
@@ -29,9 +29,13 @@ Feel free to use, improve, and cry to my low code quality !
 
 ## Screenshots
 
-I know this is AWFUL 🤮, I have not worked on the css yet, please be patient (or help meeeee 🆘) !
+CSS is a work in progress !
 
-![grid view](./doc/grid.png) ![file info](./doc/info.png) ![reading](./doc/reading.png)
+![grid view](./doc/grid.png)
+
+Navigation directly by clicking on the left or right of the comic page
+
+![reading](./doc/reading.png)
 
 ## Installation
 
@@ -50,7 +54,7 @@ podman run -d -p 0.0.0.0:3200:3200 \
 
 ### From source
 
-For now you need the `css` directory, so the simpliest way is to clone sources and build it with cargo, a usable binary and docker image will be available soon.
+⚠ We use [SASS](https://sass-lang.com/documentation/) for the `css`, and [grass](https://github.com/connorskees/grass) to compile it, so you well need the binary.
 
 ```
 git clone https://github.com/thasos/eloran.git
@@ -59,30 +63,31 @@ just build
 target/x86_64-unknown-linux-gnu/release/eloran
 ```
 
-If you don't use [just](https://github.com/casey/just), use it 😁 or just launch `cargo build --release`
+If you don't use [just](https://github.com/casey/just), use it 😁 or just launch `cargo build --release` (see [justfile](./justfile) for exacts commands)
 
 ### Build dependencies
 
-Nix :
+Nix with [flakes](https://nixos.wiki/wiki/flakes) enabled :
 ```
-nix-shell shell.nix
+nix develop
 ```
 
 Arch :
 ```
 sudo pacman -S libarchive cairo poppler-glib
+yay -S grass-sass
 # if you want to package it in alpine image
 sudo pacman -S musl
 ```
 
-Debian/ubuntu :
+Debian/ubuntu (this part need an update) :
 ```
 sudo apt install libarchive-dev libcairo2-dev libpoppler-glib-dev
 # if you want to package it in alpine image
 sudo apt install musl-dev
 ```
 
-Fedora :
+Fedora (this part need an update) :
 ```
 sudo dnf install rust-glib-sys-devel.noarch
 sudo dnf install rust-cairo-sys-rs0.16-devel.noarch
@@ -93,7 +98,8 @@ sudo dnf install libarchive-devel.x86_64
 
 ## TODO
 
-- [ ] properly update file when modified
+- [ ] display read status
+- [ ] add flags (read status and bookmark) to folder
 - [x] hash password in database !!
 - [ ] store session in database (see `fn create_router()` in [src/http_server.rs](http_server.rs))
 - [ ] pretty error handling
@@ -101,7 +107,7 @@ sudo dnf install libarchive-devel.x86_64
 - [ ] allow relative path in `library_path`
 - [x] fix element numbers for sub directories
 - [ ] handle `cover.jpg` files for directories (or use first file's cover ?)
-- [ ] customized css
+- [x] customized css
 - [ ] upload files
 - [ ] install page at 1st start : admin password, library_path, new user...
 - [ ] share files (or directories, or page)
@@ -109,8 +115,7 @@ sudo dnf install libarchive-devel.x86_64
 - [ ] progress bar while reading, file info, and grid view
 - [ ] easy go to page number while reading and from file info
 - [x] read pdf in new tab
-- [ ] display read status in bookmarks page
-- [ ] better css 🤪
+- [x] better css 🤪
 - [ ] true ebook reading
 - [ ] export read status
 - [ ] list "next to read"

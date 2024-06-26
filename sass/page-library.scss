@@ -1,0 +1,10 @@
+body {
+  &.page-library {
+    --color-page-1: var(--color-theme-1);
+    --color-page-1-light: var(--color-theme-1-light);
+    --color-page-2: var(--color-theme-2);
+    --color-page-2-light: var(--color-theme-2-light);
+    --color-page-3: var(--color-theme-3);
+    --color-page-3-light: var(--color-theme-3-light);
+  }
+}

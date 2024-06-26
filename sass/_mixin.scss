@@ -1,0 +1,15 @@
+@mixin bordered($color: #000000) {
+  border: 2px solid $color;
+  box-shadow: 3px 3px $color;
+}
+
+@mixin hovered($condition) {
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.1s ease;
+
+  &:#{$condition} {
+    transform: translate(-2px, -2px);
+    box-shadow: 7px 7px #000000;
+  }
+}

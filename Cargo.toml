@@ -12,7 +12,7 @@ readme = "README.md"
 publish = true
 
 [dependencies]
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.7", features = ["macros", "http2"] }
 # TODO upgrade axum-login when PR#91 will be merged (0.7 ?)
 # see https://github.com/maxcountryman/axum-login/pull/91
 # axum-login = { git = "https://github.com/maxcountryman/axum-login", rev = "bb7e5d32100bb6846412cee1f26851cc47397991", features = ["sqlite"] }
@@ -28,7 +28,11 @@ image = "0.24.5"
 epub = "2.0.0"
 # TODO remove b64
 base64 = "0.22"
-compress-tools = "0.14"
+# compress-tools = "0.14"
+# panic on unsafe code of this lib :
+# `unsafe precondition(s) violated: slice::from_raw_parts requires the pointer to be aligned and non-null, and the total size of the slice not to exceed `isize::MAX``
+# see https://github.com/OSSystems/compress-tools-rs/issues/123
+compress-tools = { git = " https://github.com/OSSystems/compress-tools-rs", rev = "e2af8dafce216f5bf598a34fc7fc73d47e1a2d55" }
 libc = "0.2.140"
 # clap = { version = "4.1.13", default-features = false, features = ["std"] }
 clap = "4.1.13"

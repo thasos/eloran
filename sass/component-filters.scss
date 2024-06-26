@@ -1,0 +1,101 @@
+@import 'mixin';
+
+body > main .filters {
+  margin-left: 260px;
+
+  display: flex;
+  gap: 40px;
+  align-items: center;
+  justify-content: space-between;
+  margin-right: 30px;
+  margin-top: 25px;
+  height: 46px;
+
+  .breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    max-height: 48px;
+    overflow: hidden;
+    gap: 10px;
+
+    li {
+
+      &.selected {
+        font-weight: 700;
+      }
+    }
+
+    .border-arrow {
+      width: 0;
+      height: 0;
+      border-left: 12px solid black;
+      border-top: 10px solid transparent;
+      border-bottom: 10px solid transparent;
+
+      .arrow {
+        width: 0;
+        height: 0;
+        top: -7px;
+        left: -11px;
+        position: relative;
+        border-left: 9px solid var(--color-theme-1);
+        border-top: 7px solid transparent;
+        border-bottom: 7px solid transparent;
+      }
+    }
+  }
+
+  .search form {
+    width: 270px;
+    height: 46px;
+    background-color: #ffffff;
+    border-radius: 8px;
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    @include bordered;
+    @include hovered("has(input:focus)");
+
+    input[type=submit] {
+      height: 100%;
+      width: 46px;
+      background-color: var(--color-theme-2);
+      background-image: url(/images/search.svgz);
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-size: 26px;
+      border-radius: 6px 0 0 6px;
+      border: none;
+      padding: 0;
+      border-right: 2px solid #000000;
+      cursor: pointer;
+    }
+
+    input {
+      height: 100%;
+      width: 214px;
+      padding: 0;
+      border-radius: 0 6px 6px 0;
+      border: none;
+      font-size: 18px;
+      font-family: Exo, sans-serif;
+
+      &:focus {
+        outline: none;
+      }
+    }
+  }
+
+  @media only screen and (max-width: 799px) {
+    margin-left: 190px;
+
+    display: flex;
+    flex-direction: column;
+    align-items: start;
+    height: auto;
+    gap: 15px;
+  }
+
+}

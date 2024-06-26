@@ -9,7 +9,6 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
         meta(charset="UTF-8");
         meta(name="viewport", content="width=device-width");
         link(rel="stylesheet", href="/css/eloran.css");
-        link(rel="stylesheet", href="/css/w3.css");
         meta(http-equiv="Cache-Control", content="no-cache, no-store, must-revalidate");
         meta(http-equiv="Pragma", content="no-cache");
         meta(http-equiv="Expires", content="0");
@@ -23,7 +22,7 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
 pub fn simple_message(message: &str, origin: Option<&str>) -> String {
     let message = message.to_owned();
     let origin = origin.to_owned();
-    let menu = menu(None, None);
+    let menu = menu(None);
     let body_content = box_html! {
         : menu;
         div {
@@ -34,7 +33,7 @@ pub fn simple_message(message: &str, origin: Option<&str>) -> String {
 }
 
 pub fn prefs(user: &User) -> String {
-    let menu = menu(Some(user.to_owned()), None);
+    let menu = menu(Some(user.to_owned()));
     let body_content = box_html! {
         : menu;
         h2 { : "Preferences" }
@@ -49,7 +48,7 @@ pub fn prefs(user: &User) -> String {
 }
 
 pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> String {
-    let menu = menu(Some(user.to_owned()), None);
+    let menu = menu(Some(user.to_owned()));
     let body_content = box_html! {
         : menu;
         h2 { : "Admin Panel" }
@@ -185,7 +184,7 @@ pub fn file_info(
     read_status: bool,
     up_link: String,
 ) -> String {
-    let menu = menu(Some(user.to_owned()), None);
+    let menu = menu(Some(user.to_owned()));
     let file = file.clone();
     let body_content = box_html! {
         : menu;
@@ -224,7 +223,7 @@ pub fn file_info(
 }
 
 pub fn flag_toggle(user: &User, flag_status: bool, file_id: &str, flag: &str) -> String {
-    let menu = menu(Some(user.to_owned()), None);
+    let menu = menu(Some(user.to_owned()));
     // TODO create enum for flag...
     let flag_response = match flag {
         "bookmark" => {
@@ -256,7 +255,7 @@ pub fn flag_toggle(user: &User, flag_status: bool, file_id: &str, flag: &str) ->
 }
 
 pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
-    let menu = menu(Some(user.to_owned()), None);
+    let menu = menu(Some(user.to_owned()));
     let file = file.clone();
     // don't go outside the range of the book
     let previous_page = match page {
@@ -270,6 +269,18 @@ pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
     };
     let body_content = box_html! {
         : menu;
+        div(class="navigation-map") {
+            picture {
+                source(srcset=format!("/comic_page/{}/{}/800px", file.id, page), media="(max-width: 800px)", class="comic-content");
+                source(srcset=format!("/comic_page/{}/{}/1000px", file.id, page), media="(max-width: 1000px)", class="comic-content");
+                source(srcset=format!("/comic_page/{}/{}/orig", file.id, page), class="comic-content");
+                img(src=format!("/comic_page/{}/{}/orig", file.id, page), alt="TODO_PAGE_NUM", class="comic-content", usemap="navigation-map");
+                // not a html map, because we need percentage coords
+                // thx https://stackoverflow.com/a/26231487
+                a(href=format!("/read/{}/{}", file.id, previous_page), style="top: 0%; left: 0%; width: 30%; height: 100%;");
+                a(href=format!("/read/{}/{}", file.id, next_page), style="top: 0%; left: 70%; width: 30%; height: 100%;");
+            }
+        }
         h1(id="navigation", align="center") {
             // TODO go to page number
             a(href=format!("/read/{}/{}", file.id, previous_page), class="navigation") : "⬅️";
@@ -282,20 +293,12 @@ pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
             : " | " ;
             a(href=format!("/read/{}/{}", file.id, next_page), class="navigation") : "➡️";
         }
-        div(id="comic-content") {
-            picture {
-                source(srcset=format!("/comic_page/{}/{}/800px", file.id, page), media="(max-width: 800px)");
-                source(srcset=format!("/comic_page/{}/{}/1000px", file.id, page), media="(max-width: 1000px)");
-                source(srcset=format!("/comic_page/{}/{}/orig", file.id, page));
-                img(src=format!("/comic_page/{}/{}/orig", file.id, page), alt="TODO_PAGE_NUM");
-            }
-        }
     };
     render(body_content, None)
 }
 
 pub fn ebook_reader(user: &User, file: &FileInfo, epub_content: &str, page: i32) -> String {
-    let menu = menu(Some(user.to_owned()), None);
+    let menu = menu(Some(user.to_owned()));
     let epub_content = epub_content.to_string();
     let file = file.clone();
     // don't go outside the range of the book
@@ -364,23 +367,57 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
         up_link.pop();
     }
 
+    // fill search button value if needed
+    let search_value = list_to_display.search_query.to_owned().unwrap_or_default();
+
+    // String used to build breadcrumb links
+    let mut breadcrumb_link_path = String::new();
+
     // html rendering
-    let menu = menu(
-        Some(list_to_display.user.to_owned()),
-        list_to_display.search_query.to_owned(),
-    );
+    let menu = menu(Some(list_to_display.user.to_owned()));
     let body_content = box_html! {
         : menu;
-        div(id="library-content") {
-            // if we have a current_path, we can display some infos (unavailable in search)
-            @ if let Some(current_path) = &list_to_display.current_path {
-                p {
-                    // TODO split and add a direct link for each element in path
-                    : format!("list_to_display.library_path = {}, current_path = {}", list_to_display.library_path, &current_path);
+        main {
+            header {
+                a(href="/library") {
+                    img(src="/images/library-icon.svgz") ;
+                    h1 { : "Library" }
                 }
-                h2 { a(href=format!("/library{}", &up_link), class="navigation") : "↖️  up" }
+            }
+            section(class="filters") {
+                // TODO do not print this in case on search
+                ul(class="breadcrumb") {
+                    li { a(href=format!("/library"), class="navigation") : "Library" }
+                    @ if let Some(current_path) = &list_to_display.current_path {
+                        // first, split only last element
+                        @ if let Some(rsplitted_current_path) = current_path.rsplit_once('/') {
+                            // then loop on all directories
+                            @ for sub_directory in rsplitted_current_path.0.split('/') {
+                                li {
+                                    a(href=format!(
+                                        "/library{}",
+                                        { breadcrumb_link_path.push_str(&(sub_directory.to_owned() + "/")) ; &breadcrumb_link_path.trim_end_matches('/') }
+                                    ))
+                                    : sub_directory
+                                }
+                                div(class="border-arrow") { div(class="arrow") {} }
+                            }
+                            // last element of breadcrumb must be css class `selected`
+                            // and no arrow
+                            li(class="selected") { a(href=format!("/library{}/{}", rsplitted_current_path.0, &rsplitted_current_path.1)) : rsplitted_current_path.1 }
+                        }
+                    }
+                }
+                // TODO put search elsewhere in code ?
+                div(class="search") {
+                    form(accept-charset="utf-8", action="/search", method="post") {
+                        input(type="submit", value="");
+                        input(type="text", placeholder="Search...", name="query", value=search_value);
+                    }
+                }
             }
 
+            // TODO not visible : use new CSS
             // if lists are empty, print a message
             @ if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() && &list_to_display.library_path == "/" {
                 p {
@@ -390,6 +427,7 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
             } else if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() {
                 p {
                     // TODO need library name or id here (in struct LibraryDisplay)
+                    // TODO do not print in case of search...
                     : format!("Library {} is empty, please be patient", &list_to_display.library_path);
                     // TODO remove this ugly unwrap
                     form(action=format!("/admin/library/{}", &list_to_display.library_id.unwrap_or(0)), method="post") {
@@ -400,46 +438,57 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
                 }
             }
 
-            // image gallery
-            // https://www.w3schools.com/Css/css_image_gallery.asp
-            @ for directory in &list_to_display.directories_list.to_owned() {
-                div(class="gallery box_shadow container") {
-                    // remove disk parent path for url construction
-                    a(href= {
-                        // avoid double '/', I'm not proud of this...
-                        if directory.parent_path.is_empty() {
-                            format!("/library/{}", &directory.name)
-                        } else {
-                            format!("/library{}/{}", list_to_display.current_path.clone().unwrap_or("".to_string()), &directory.name)
-                        }
-                    }) {
-                        div(class="cover") {
-                            img(src="/images/folder.svgz", alt="folder", width="150", height="230");
-                            @ if let Some(file_count) = directory.file_count{
-                                div(class="file_count") {
-                                    : file_count;
+            section(class="gallery") {
+                @ for directory in &list_to_display.directories_list.to_owned() {
+                    article(class="folder") {
+                        a(href= {
+                            // avoid double '/', I'm not proud of this...
+                            if directory.parent_path.is_empty() {
+                                format!("/library/{}", &directory.name)
+                            } else {
+                                format!("/library{}/{}", list_to_display.current_path.clone().unwrap_or("".to_string()), &directory.name)
+                            }
+                        }) {
+                            div(class="cover") {
+                                span(class="folder-img") {}
+                                @ if let Some(file_count) = directory.file_count {
+                                    span(class="folder-nb-items")
+                                        : file_count;
                                 }
                             }
+                            div(class="title") { h2 { : format_args!("{}", directory.name) } }
                         }
-                        div(class="gallery_desc") {
-                            : format_args!("{}", directory.name)
-                        }
+                        // TODO add toggle bookmark
+                        // @ if file.1 {
+                        //     button(class="favorite bookmarked")
+                        // } else {
+                        //     button(class="favorite")
+                        // }
                     }
                 }
-            }
-            @ for file in &list_to_display.files_list.to_owned() {
-                div(class="gallery box_shadow container") {
-                    a(href=format!("/infos/{}", &file.0.id)) {
-                        div(class="cover") {
-                            img(src=format!("/cover/{}", &file.0.id), alt="cover", width="150", height="230", class= if file.2 { "cover_read" } else { "cover" } );
+                @ for file in &list_to_display.files_list.to_owned() {
+                    article(class="file") {
+                        a(href=format!("/infos/{}", &file.0.id)) {
+                            div(class="cover") {
+                                // TODO set class cover
+                                img(src=format!("/cover/{}", &file.0.id), alt="cover", width="150", height="230", class= if file.2 {
+                                    "cover read"
+                                } else {
+                                    "cover"
+                                } );
+                            }
                         }
-                        div(class="gallery_desc") {
-                            : format_args!("{}", file.0.name);
+                        div(class="title") { h2 { : format_args!("{}", file.0.name); } }
+                        // add toggle link
+                        @ if file.1 {
+                            a(href=format!("/toggle/bookmark/{}", file.0.id)) {
+                                button(class="favorite bookmarked")
+                            }
+                        } else {
+                            a(href=format!("/toggle/bookmark/{}", file.0.id)) {
+                                button(class="favorite")
+                            }
                         }
-                    }
-                    div(class="flags") {
-                        : if file.1 { "⭐" } else { "" };
-                        : if file.2 { "✅" } else { "" };
                     }
                 }
             }
@@ -448,39 +497,42 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
     render(body_content, None)
 }
 
-fn menu<'a>(
-    user: Option<User>,
-    search_query: Option<String>,
-) -> Box<dyn horrorshow::RenderBox + 'a> {
+fn menu<'a>(user: Option<User>) -> Box<dyn horrorshow::RenderBox + 'a> {
     // TODO print a pretty menu, 1 line...
     let menu_content = box_html! {
-        div(id="menu") {
-            p {
-                a(href="/library") : "library" ;
-                : " | ";
-                a(href="/bookmarks") : "bookmarks" ;
-                : " | ";
-                a(href="/reading") : "reading" ;
-                : " | ";
-                a(href="/prefs") : "preferences" ;
-                // print admin link if Role is ok
-                @ if let Some(user) = user {
-                    @ if user.role == Role::Admin {
-                        : " | ";
-                        a(href="/admin") : "administration" ;
-                    }
-                    : " | ";
-                    : format!("{} - {:?}", user.name.as_str(), user.role) ;
-                    : " (";
-                    a(href="/logout") : "logout" ;
-                    : ")";
-                }
+        header {
+            div(class="logo") {
+                a(href="/library") { : "Eloran" }
             }
-            form(accept-charset="utf-8", action="/search", method="post") {
-                @ if let Some(query) = &search_query {
-                    input(type="text", placeholder=query, name="query", value=query) ;
-                } else {
-                    input(type="text", placeholder="Search..", name="query") ;
+            nav {
+                input(type="checkbox", id="lasagna-checkbox");
+                button(class="rounded-button lasagna-button") {
+                    span(class="selected-rounded-button") {}
+                    label(for="lasagna-checkbox") {
+                        img(src="/images/lasagna.svgz");
+                    }
+                }
+                ul(class="menu") {
+                    li { a(href="/library", class="nav-button nav-button-1") : "Library" ; }
+                    li { a(href="/reading", class="nav-button nav-button-2") : "Reading" ; }
+                    li { a(href="/bookmarks", class="nav-button nav-button-3") : "Bookmarks" ; }
+                    input(type="checkbox", id="prefs-checkbox");
+                    button(class="rounded-button prefs-button") {
+                        span(class="selected-rounded-button") {}
+                        label(for="prefs-checkbox") { : "A" ; }
+                    }
+                    ul(class="prefs-menu") {
+                        li { a(href="/prefs") : "Preferences" ; }
+                        // print admin link if Role is ok
+                        @ if let Some(user) = user {
+                            @ if user.role == Role::Admin {
+                                li {
+                                a(href="/admin") : "Administration" ;
+                                }
+                            }
+                            li { a(href="/logout") : "Logout" ; }
+                        }
+                    }
                 }
             }
         }
@@ -490,7 +542,7 @@ fn menu<'a>(
 
 pub fn homepage(user: &User) -> String {
     // TODO moche (obligé le clone  ?)
-    let menu = menu(Some(user.to_owned()), None);
+    let menu = menu(Some(user.to_owned()));
     let body_content = box_html! {
         : menu;
         div(id="home-content") {
@@ -505,9 +557,8 @@ fn render(body_content: Box<dyn horrorshow::RenderBox>, redirect_url: Option<&st
     let full_page = html! { : doctype::HTML;
     html {
         head { : header(redirect_url); }
-        body(class="w3-theme-dark") {
-            h2(id="heading") { : "Eloran" }
-            : body_content
+            body(class="page-library") {
+                : body_content
             }
         }
     };
@@ -611,7 +662,7 @@ mod tests {
         let user = User::default();
         let search_query = String::from("searching");
         let redirect_url = "tests";
-        let menu = menu(Some(user), Some(search_query));
+        let menu = menu(Some(user));
         let rendered_menu = render(menu, Some(redirect_url));
         insta::assert_yaml_snapshot!(rendered_menu)
     }

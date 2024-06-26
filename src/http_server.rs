@@ -337,9 +337,12 @@ async fn cover_handler(
                         match image_file_content {
                             Ok(image) => (
                                 StatusCode::OK,
-                                [(header::CONTENT_TYPE, "image/svg+xml")],
-                                [(header::CONTENT_ENCODING, "gzip")],
-                                [(header::VARY, "Accept-Encoding")],
+                                [
+                                    (header::CONTENT_TYPE, "image/svg+xml"),
+                                    (header::CONTENT_ENCODING, "gzip"),
+                                    (header::VARY, "Accept-Encoding"),
+                                    (header::CACHE_CONTROL, "public, max-age=604800"),
+                                ],
                                 image,
                             )
                                 .into_response(),
@@ -361,7 +364,10 @@ async fn cover_handler(
                                     if !cover.is_empty() {
                                         (
                                             StatusCode::OK,
-                                            [(header::CONTENT_TYPE, "image/jpeg")],
+                                            [
+                                                (header::CONTENT_TYPE, "image/jpeg"),
+                                                (header::CACHE_CONTROL, "no-cache"),
+                                            ],
                                             cover,
                                         )
                                             .into_response()
@@ -407,10 +413,13 @@ async fn download_handler(
                         "cbr" => "application/vnd.comicbook-rar",
                         _ => "",
                     };
-                    if let Ok(file_content) = fs::read(&full_path) {
+                    if let Ok(file_content) = fs::read(full_path) {
                         (
                             StatusCode::OK,
-                            [(header::CONTENT_TYPE, content_type)],
+                            [
+                                (header::CONTENT_TYPE, content_type),
+                                (header::CACHE_CONTROL, "no-cache"),
+                            ],
                             [(
                                 header::CONTENT_DISPOSITION,
                                 format!("attachment; filename=\"{}\"", &file.name),
@@ -446,7 +455,10 @@ async fn comic_page_handler(
                     match reader::get_comic_page(&file, page, &size).await {
                         Some(comic_board) => (
                             StatusCode::OK,
-                            [(header::CONTENT_TYPE, "image/jpeg")],
+                            [
+                                (header::CONTENT_TYPE, "image/jpeg"),
+                                (header::CACHE_CONTROL, "no-cache"),
+                            ],
                             comic_board,
                         )
                             .into_response(),
@@ -514,7 +526,10 @@ async fn reader_handler(
                             match pdf_file {
                                 Ok(pdf_file) => (
                                     StatusCode::OK,
-                                    [(header::CONTENT_TYPE, "application/pdf")],
+                                    [
+                                        (header::CONTENT_TYPE, "application/pdf"),
+                                        (header::CACHE_CONTROL, "no-cache"),
+                                    ],
                                     pdf_file,
                                 )
                                     .into_response(),
@@ -1042,16 +1057,11 @@ async fn get_root(auth_session: AuthSession) -> impl IntoResponse {
 /// create css from binary if not found on disk
 // TODO add a clap option to specify css directory
 // TODO use struct ?
-fn create_css() -> (String, String) {
+fn create_css() -> String {
     // original css file
     let eloran_css_original = include_bytes!("css/eloran.css");
     let mut eloran_css = match std::str::from_utf8(eloran_css_original) {
         Ok(eloran_css) => eloran_css.to_string(),
-        Err(_) => String::from(""),
-    };
-    let w3_css_original = include_bytes!("css/w3.css");
-    let mut w3_css = match std::str::from_utf8(w3_css_original) {
-        Ok(w3_css) => w3_css.to_string(),
         Err(_) => String::from(""),
     };
     // if custom css exists, use them
@@ -1063,37 +1073,32 @@ fn create_css() -> (String, String) {
             let filename = filename.to_str().unwrap();
             if filename.contains("eloran.css") {
                 eloran_css = fs::read_to_string(file.path()).unwrap();
-            } else if filename.contains("w3.css") {
-                w3_css = fs::read_to_string(file.path()).unwrap();
             } else {
                 warn!(
-                    "css file must be named eloran.css or w3.css, file [{}] will be ignored",
+                    "css file must be named eloran.css, file [{}] will be ignored",
                     filename
                 );
             }
         }
     }
-    (eloran_css, w3_css)
+    eloran_css
 }
 
 /// serve css (custom file can be loaded)
-async fn get_css(
-    State(css): State<(String, String)>,
-    Path(path): Path<String>,
-) -> impl IntoResponse {
+async fn get_css(State(css): State<String>, Path(path): Path<String>) -> impl IntoResponse {
     info!("get /css/{}", &path);
-    let eloran_css = css.0;
-    let w3_css = css.1;
     // return css if found
     match path.as_str() {
         "eloran.css" => (
             StatusCode::OK,
-            [(header::CONTENT_TYPE, "text/css")],
-            eloran_css,
+            [
+                (header::CONTENT_TYPE, "text/css"),
+                (header::CACHE_CONTROL, "public, max-age=604800"),
+            ],
+            css,
         )
             .into_response(),
-        "w3.css" => (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], w3_css).into_response(),
-        // useless : the html headers uses only eloran.css and w3.css, but perhaps in the future...
+        // useless : the html headers uses only eloran.css but perhaps in the future...
         _ => {
             let css_file_content = fs::read_to_string(format!("src/css/{path}"));
             match css_file_content {
@@ -1110,6 +1115,40 @@ async fn get_css(
     }
 }
 
+/// serve fonts
+/// TODO see https://stackoverflow.com/questions/75065364/how-to-include-font-file-assets-folder-to-rust-binary ?
+async fn get_fonts(Path(path): Path<String>) -> impl IntoResponse {
+    info!("get /fonts/{}", &path);
+
+    // return font if found
+    match path.as_str() {
+        "Exo-VariableFont_wght.ttf" => {
+            match fs::read("src/fonts/Exo-VariableFont_wght.ttf") {
+                Ok(exo_font) => (
+                    StatusCode::OK,
+                    [
+                        (header::CONTENT_TYPE, "font/ttf"),
+                        // TODO fix cache !!!
+                        (header::CACHE_CONTROL, "public, max-age=604800"),
+                    ],
+                    exo_font,
+                )
+                    .into_response(),
+                Err(_) => {
+                    error!("unable to load exo font");
+                    // TODO true 404 page ?
+                    (StatusCode::NOT_FOUND, "font not found").into_response()
+                }
+            }
+        }
+        _ => {
+            error!("font {path} not found");
+            // TODO true 404 page ?
+            (StatusCode::NOT_FOUND, "font not found").into_response()
+        }
+    }
+}
+
 async fn get_images(Path(path): Path<String>) -> impl IntoResponse {
     info!("get /images/{}", &path);
     // TODO include_bytes pour la base ? (cf monit-agregator)
@@ -1120,9 +1159,12 @@ async fn get_images(Path(path): Path<String>) -> impl IntoResponse {
     match image_file_content {
         Ok(image) => (
             StatusCode::OK,
-            [(header::CONTENT_TYPE, "image/svg+xml")],
-            [(header::CONTENT_ENCODING, "gzip")],
-            [(header::VARY, "Accept-Encoding")],
+            [
+                (header::CONTENT_TYPE, "image/svg+xml"),
+                (header::CONTENT_ENCODING, "gzip"),
+                (header::VARY, "Accept-Encoding"),
+                (header::CACHE_CONTROL, "public, max-age=604800"),
+            ],
             image,
         )
             .into_response(),
@@ -1256,6 +1298,7 @@ async fn create_router() -> Router {
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
                 .route("/", get(get_root))
                 .route("/css/*path", get(get_css))
+                .route("/fonts/*path", get(get_fonts))
                 .with_state(css)
                 .route("/images/*path", get(get_images)) // ⚠️  UI images, not covers
                 .route("/login", post(login_handler))
@@ -1377,7 +1420,7 @@ mod tests {
         // css error
         let res = client.get("/css/not_found").await;
         assert_eq!(res.status_code(), StatusCode::NOT_FOUND);
-        let res = client.get("/css/w3.css").await;
+        let res = client.get("/css/eloran.css").await;
         let res_headers = match res.headers().get("content-type") {
             Some(header) => header,
             None => panic!(),
