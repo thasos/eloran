@@ -20,10 +20,8 @@ jobs:
       run: sudo apt-get install -y libarchive-dev libcairo2-dev libpoppler-glib-dev
     - name: Install grass compiler and just
       run: cargo install grass just
+    - name: Add nightly toolchain
+      run: rustup toolchain install nightly
     - uses: actions/checkout@v4
     - name: Build
       run: just build
-    # - name: Build
-    #   run: cargo build --verbose
-    # - name: Run tests
-    #   run: cargo test --verbose
