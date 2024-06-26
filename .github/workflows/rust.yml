@@ -17,11 +17,11 @@ jobs:
 
     steps:
     - name: Install build deps
-      run: sudo apt-get install -y libarchive-dev libcairo2-dev libpoppler-glib-dev
-    - name: Install grass compiler and just
-      run: cargo install grass just
-    - name: Add nightly toolchain
-      run: rustup toolchain install nightly
+      run: |
+        sudo apt-get install -y libarchive-dev libcairo2-dev libpoppler-glib-dev
+        cargo install grass just
+        rustup toolchain install nightly
+        rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
     - uses: actions/checkout@v4
     - name: Build
       run: just build
