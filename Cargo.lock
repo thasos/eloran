@@ -532,7 +532,7 @@ checksum = "0b6a852b24ab71dffc585bcb46eaf7959d175cb865a7152e35b348d1b2960422"
 [[package]]
 name = "compress-tools"
 version = "0.14.3"
-source = "git+https://github.com/OSSystems/compress-tools-rs?rev=e2af8dafce216f5bf598a34fc7fc73d47e1a2d55#e2af8dafce216f5bf598a34fc7fc73d47e1a2d55"
+source = "git+https://github.com/johnvictor1965/compress-tools-rs/?rev=e2af8dafce216f5bf598a34fc7fc73d47e1a2d55#e2af8dafce216f5bf598a34fc7fc73d47e1a2d55"
 dependencies = [
  "derive_more",
  "libc",

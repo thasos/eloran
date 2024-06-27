@@ -32,7 +32,8 @@ base64 = "0.22"
 # panic on unsafe code of this lib :
 # `unsafe precondition(s) violated: slice::from_raw_parts requires the pointer to be aligned and non-null, and the total size of the slice not to exceed `isize::MAX``
 # see https://github.com/OSSystems/compress-tools-rs/issues/123
-compress-tools = { git = " https://github.com/OSSystems/compress-tools-rs", rev = "e2af8dafce216f5bf598a34fc7fc73d47e1a2d55" }
+# compress-tools = { git = "https://github.com/OSSystems/compress-tools-rs", rev = "e2af8dafce216f5bf598a34fc7fc73d47e1a2d55" }
+compress-tools = { git = "https://github.com/johnvictor1965/compress-tools-rs/", rev = "e2af8dafce216f5bf598a34fc7fc73d47e1a2d55" }
 libc = "0.2.140"
 # clap = { version = "4.1.13", default-features = false, features = ["std"] }
 clap = "4.1.13"
