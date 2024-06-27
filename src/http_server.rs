@@ -341,7 +341,11 @@ async fn cover_handler(
                                     (header::CONTENT_TYPE, "image/svg+xml"),
                                     (header::CONTENT_ENCODING, "gzip"),
                                     (header::VARY, "Accept-Encoding"),
-                                    (header::CACHE_CONTROL, "public, max-age=604800"),
+                                    // no-cache does not mean "don't cache"
+                                    // `green_book.svgz` is cached, but browser must check for
+                                    // content update
+                                    // TODO can be optimized with a
+                                    (header::CACHE_CONTROL, "no-cache"),
                                 ],
                                 image,
                             )
@@ -418,7 +422,7 @@ async fn download_handler(
                             StatusCode::OK,
                             [
                                 (header::CONTENT_TYPE, content_type),
-                                (header::CACHE_CONTROL, "no-cache"),
+                                // (header::CACHE_CONTROL, "no-cache"),
                             ],
                             [(
                                 header::CONTENT_DISPOSITION,
@@ -457,7 +461,7 @@ async fn comic_page_handler(
                             StatusCode::OK,
                             [
                                 (header::CONTENT_TYPE, "image/jpeg"),
-                                (header::CACHE_CONTROL, "no-cache"),
+                                // (header::CACHE_CONTROL, "no-cache"),
                             ],
                             comic_board,
                         )
@@ -528,7 +532,7 @@ async fn reader_handler(
                                     StatusCode::OK,
                                     [
                                         (header::CONTENT_TYPE, "application/pdf"),
-                                        (header::CACHE_CONTROL, "no-cache"),
+                                        // (header::CACHE_CONTROL, "no-cache"),
                                     ],
                                     pdf_file,
                                 )
@@ -1093,7 +1097,7 @@ async fn get_css(State(css): State<String>, Path(path): Path<String>) -> impl In
             StatusCode::OK,
             [
                 (header::CONTENT_TYPE, "text/css"),
-                (header::CACHE_CONTROL, "public, max-age=604800"),
+                // (header::CACHE_CONTROL, "public, max-age=604800"),
             ],
             css,
         )
@@ -1128,7 +1132,6 @@ async fn get_fonts(Path(path): Path<String>) -> impl IntoResponse {
                     StatusCode::OK,
                     [
                         (header::CONTENT_TYPE, "font/ttf"),
-                        // TODO fix cache !!!
                         (header::CACHE_CONTROL, "public, max-age=604800"),
                     ],
                     exo_font,
@@ -1136,7 +1139,7 @@ async fn get_fonts(Path(path): Path<String>) -> impl IntoResponse {
                     .into_response(),
                 Err(_) => {
                     error!("unable to load exo font");
-                    // TODO true 404 page ?
+                    // TODO true 404 page
                     (StatusCode::NOT_FOUND, "font not found").into_response()
                 }
             }
