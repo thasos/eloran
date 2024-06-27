@@ -2,11 +2,25 @@
   width: 100%;
 }
 
+
 .navigation-map {
   position: relative;
+  a{
+    // block surement pakse ya pas de div, tester sans (un div est un bloc)
+    display: block;
+    position: absolute;
+  }
 }
 
-.navigation-map a{
-  display: block;
-  position: absolute;
+.navigation-left-zone a{
+  top: 0%;
+  left: 0%;
+  width: 30%;
+  height: 100%;
+}
+.navigation-right-zone a{
+  top: 0%;
+  left: 70%;
+  width: 30%;
+  height: 100%;
 }

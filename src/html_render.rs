@@ -270,6 +270,9 @@ pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
     let body_content = box_html! {
         : menu;
         div(class="navigation-map") {
+            // TODO essayer un <div> dans le <a>, et c'est lui qui contient le style
+            // a(href=format!("/read/{}/{}", file.id, previous_page)) { div(class="navigation-left-zone"); }
+            // a(href=format!("/read/{}/{}", file.id, next_page)) { div(class="navigation-right-zone"); }
             picture {
                 source(srcset=format!("/comic_page/{}/{}/800px", file.id, page), media="(max-width: 800px)", class="comic-content");
                 source(srcset=format!("/comic_page/{}/{}/1000px", file.id, page), media="(max-width: 1000px)", class="comic-content");
@@ -277,8 +280,8 @@ pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
                 img(src=format!("/comic_page/{}/{}/orig", file.id, page), alt="TODO_PAGE_NUM", class="comic-content", usemap="navigation-map");
                 // not a html map, because we need percentage coords
                 // thx https://stackoverflow.com/a/26231487
-                a(href=format!("/read/{}/{}", file.id, previous_page), style="top: 0%; left: 0%; width: 30%; height: 100%;");
-                a(href=format!("/read/{}/{}", file.id, next_page), style="top: 0%; left: 70%; width: 30%; height: 100%;");
+                a(href=format!("/read/{}/{}", file.id, previous_page), class="top: 0%; left: 0%; width: 30%; height: 100%;");
+                a(href=format!("/read/{}/{}", file.id, next_page), class="top: 0%; left: 70%; width: 30%; height: 100%;");
             }
         }
         h1(id="navigation", align="center") {
