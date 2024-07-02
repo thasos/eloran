@@ -33,7 +33,7 @@ CSS is a work in progress !
 
 ![grid view](./doc/grid.png)
 
-Navigation directly by clicking on the left or right of the comic page
+Navigation directly by clicking on the left or right of the comic page (red rectangles are obviously not visible...)
 
 ![reading](./doc/reading.png)
 
