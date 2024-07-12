@@ -85,7 +85,7 @@ pub fn clap_args(_version: Option<&str>) -> ArgMatches {
     Command::new("Eloran")
         // TODO use version const
         // .version("666")
-        .author("Thasos Kanan <thasos+eloran@thasmanie.fr>")
+        .author("Thasos Kanan <@thasos@framapiaf.org>")
         .about("TODO")
         .arg(arg!(--ip <VALUE>).short('i').default_value(DEFAULT_IP))
         .arg(arg!(--port <VALUE>).short('p').default_value(DEFAULT_PORT))
