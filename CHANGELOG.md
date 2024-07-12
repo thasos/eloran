@@ -10,16 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 202?-??-??
 - end of beta
 
+## [0.2.1] - 2024-07-12
+- move assets (src, images, font) to project root dir
+- upgrade to compress-tools 0.15 (fix panic issue [#126](https://github.com/OSSystems/compress-tools-rs/pull/126) of the lib)
+
 ## [0.2.0] - 2024-06-26
-* migration to axum-login 0.10 and axum 0.7
-* new CSS (thanks @lmartellotto) with Sass
-* update README and screenshots
-* update dependencies
-* temporary fix compress-tools panic
-* add nix flakes
-* enable http2 (useless)
-* speed up build time (10s), no need of debuginfo
-* fix Dockerfile images path
+- migration to axum-login 0.10 and axum 0.7
+- new CSS (thanks @lmartellotto) with Sass
+- update README and screenshots
+- update dependencies
+- temporary fix compress-tools panic
+- add nix flakes
+- enable http2 (useless)
+- speed up build time (10s), no need of debuginfo
+- fix Dockerfile images path
 
 ## [0.1.3] - 2023-12-05
 - fix sub-directory count (#8)

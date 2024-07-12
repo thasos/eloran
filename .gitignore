@@ -1,2 +1,4 @@
 target
 sqlite
+.envrc
+.direnv

@@ -333,7 +333,7 @@ async fn cover_handler(
                     debug!("get /cover/{}", file_id);
                     // defaut cover definition
                     let default_cover = {
-                        let image_file_content = fs::read("src/images/green_book.svgz");
+                        let image_file_content = fs::read("images/green_book.svgz");
                         match image_file_content {
                             Ok(image) => (
                                 StatusCode::OK,
@@ -1059,7 +1059,7 @@ async fn get_root(auth_session: AuthSession) -> impl IntoResponse {
 // TODO use struct ?
 fn create_css() -> String {
     // original css file
-    let eloran_css_original = include_bytes!("css/eloran.css");
+    let eloran_css_original = include_bytes!("../css/eloran.css");
     let mut eloran_css = match std::str::from_utf8(eloran_css_original) {
         Ok(eloran_css) => eloran_css.to_string(),
         Err(_) => String::from(""),
@@ -1100,7 +1100,7 @@ async fn get_css(State(css): State<String>, Path(path): Path<String>) -> impl In
             .into_response(),
         // useless : the html headers uses only eloran.css but perhaps in the future...
         _ => {
-            let css_file_content = fs::read_to_string(format!("src/css/{path}"));
+            let css_file_content = fs::read_to_string(format!("css/{path}"));
             match css_file_content {
                 Ok(css) => {
                     (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], css).into_response()
@@ -1123,7 +1123,7 @@ async fn get_fonts(Path(path): Path<String>) -> impl IntoResponse {
     // return font if found
     match path.as_str() {
         "Exo-VariableFont_wght.ttf" => {
-            match fs::read("src/fonts/Exo-VariableFont_wght.ttf") {
+            match fs::read("fonts/Exo-VariableFont_wght.ttf") {
                 Ok(exo_font) => (
                     StatusCode::OK,
                     [
@@ -1154,7 +1154,7 @@ async fn get_images(Path(path): Path<String>) -> impl IntoResponse {
     // TODO include_bytes pour la base ? (cf monit-agregator)
     // read_to_string if svg instead of svgz
     // https://developer.mozilla.org/en-US/docs/Web/SVG/Tutorial/Getting_Started#a_word_on_web_servers_for_.svgz_files
-    let image_file_content = fs::read(format!("src/images/{path}"));
+    let image_file_content = fs::read(format!("images/{path}"));
     // TODO tests content pour 200 ?
     match image_file_content {
         Ok(image) => (
