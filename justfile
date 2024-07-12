@@ -18,7 +18,7 @@ review:
 
 # compile css from grass files
 grass_compile:
-    grass --style compressed sass/main.scss src/css/eloran.css
+    grass --style compressed sass/main.scss css/eloran.css
 
 build:
     just grass_compile
