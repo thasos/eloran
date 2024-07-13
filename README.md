@@ -79,7 +79,7 @@ TODO
 
 Debian/Ubuntu (tested with image `debian:sid-slim`)
 ```
-sudo apt install libpoppler8t64 libarchive13t64
+sudo apt install libpoppler-glib8t64 libarchive13t64
 ```
 
 Rpm style
