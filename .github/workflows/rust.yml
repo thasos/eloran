@@ -2,10 +2,8 @@
 name: Rust
 
 on:
-  # tags:
-  #   - "*.*.*"
-  push:
-    branches: [ "addCI" ]
+  tags:
+    - "*.*.*"
 
 env:
   CARGO_TERM_COLOR: always
