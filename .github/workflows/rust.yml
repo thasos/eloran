@@ -1,0 +1,49 @@
+---
+name: Rust
+
+on:
+  tags:
+    - "*.*.*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install build deps
+        run: |
+          sudo apt-get install -y libarchive-dev libcairo2-dev libpoppler-glib-dev
+          cargo install grass just
+          rustup toolchain install nightly
+          rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
+
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          just build
+          mv ./target/x86_64-unknown-linux-gnu/release/eloran ./eloran-linux-amd64
+          chmod +x eloran-linux-amd64
+
+      - name: Upload a Build Artifact
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: eloran-linux-amd64
+          path: |
+            ./eloran-linux-amd64
+            ./images/
+            ./fonts/
+            ./css/
+
+#       - name: Release with Notes
+#         uses: softprops/action-gh-release@v1
+#         with:
+#           files: |
+#             ./target/x86_64-unknown-linux-gnu/release/eloran
+#             ./images/library-icon.svgz
+#         env:
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

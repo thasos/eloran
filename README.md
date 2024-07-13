@@ -65,6 +65,28 @@ target/x86_64-unknown-linux-gnu/release/eloran
 
 If you don't use [just](https://github.com/casey/just), use it 😁 or just launch `cargo build --release` (see [justfile](./justfile) for exacts commands)
 
+### Run dependencies
+
+Nix
+```
+TODO
+```
+
+Arch
+```
+TODO
+```
+
+Debian/Ubuntu (tested with image `debian:sid-slim`)
+```
+sudo apt install libpoppler-glib8t64 libarchive13t64
+```
+
+Rpm style
+```
+TODO
+```
+
 ### Build dependencies
 
 Nix with [flakes](https://nixos.wiki/wiki/flakes) enabled :
@@ -80,14 +102,14 @@ yay -S grass-sass
 sudo pacman -S musl
 ```
 
-Debian/ubuntu (this part need an update) :
+Debian/Ubuntu (this part need an update) :
 ```
 sudo apt install libarchive-dev libcairo2-dev libpoppler-glib-dev
 # if you want to package it in alpine image
 sudo apt install musl-dev
 ```
 
-Fedora (this part need an update) :
+Rpm (this part need an update) :
 ```
 sudo dnf install rust-glib-sys-devel.noarch
 sudo dnf install rust-cairo-sys-rs0.16-devel.noarch
