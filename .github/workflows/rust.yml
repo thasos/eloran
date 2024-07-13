@@ -17,12 +17,13 @@ jobs:
 
     steps:
       - name: Install build deps
-      - uses: actions/checkout@v4
         run: |
           sudo apt-get install -y libarchive-dev libcairo2-dev libpoppler-glib-dev
           cargo install grass just
           rustup toolchain install nightly
           rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
+
+      - uses: actions/checkout@v4
 
       - name: Build
         run: |
