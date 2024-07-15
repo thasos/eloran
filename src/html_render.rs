@@ -206,7 +206,7 @@ pub fn file_info(
                     : if read_status { "✅" } else { "" };
                 }
                 h2(style="text-align: center;") { : file.name ; }
-                img(src=format!("/cover/{}", file.id), alt="cover", width="150", height="230", class="infos");
+                img(src=format!("/cover/{}", file.id), alt="cover", class="infos");
                 p(style="text-align: center;") {
                     : format!("size : {}", file.size) ;
                     br;
