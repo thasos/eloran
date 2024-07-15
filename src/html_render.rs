@@ -206,7 +206,7 @@ pub fn file_info(
                     : if read_status { "✅" } else { "" };
                 }
                 h2(style="text-align: center;") { : file.name ; }
-                img(src=format!("/cover/{}", file.id), alt="cover", width="150", height="230", class="infos");
+                img(src=format!("/cover/{}", file.id), alt="cover", class="infos");
                 p(style="text-align: center;") {
                     : format!("size : {}", file.size) ;
                     br;
@@ -470,8 +470,14 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
                     article(class="file") {
                         a(href=format!("/infos/{}", &file.0.id)) {
                             div(class="cover") {
-                                // TODO set class cover
-                                img(src=format!("/cover/{}", &file.0.id), alt="cover", width="150", height="230", class= if file.2 {
+                                // blurred cover
+                                img(src=format!("/cover/{}", &file.0.id), alt="blurred background cover", class= if file.2 {
+                                    "blurred-background read"
+                                } else {
+                                    "blurred-background"
+                                } );
+                                // resized cover, with read status
+                                img(src=format!("/cover/{}", &file.0.id), alt="cover", class= if file.2 {
                                     "cover read"
                                 } else {
                                     "cover"
