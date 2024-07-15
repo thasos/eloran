@@ -34,12 +34,12 @@ body > main .gallery {
       border-radius: 6px 6px 0 0;
 
       &.read {
-        -webkit-filter: brightness(30%); /* Safari 6.0 - 9.0 */
+        -webkit-filter: brightness(30%);
         filter: brightness(30%);
       }
 
       img {
-        object-fit: cover;
+        object-fit: contain;
         width: 100%;
         height: 100%;
         border-radius: 6px 6px 0 0;
