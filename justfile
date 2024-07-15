@@ -34,6 +34,7 @@ clean:
     cargo clean
 
 podman_build:
+    podman pull docker.io/rustlang/rust:nightly-alpine docker.io/alpine:3.20
     podman build -t ghcr.io/thasos/eloran:latest .
 # fake, use podman
 docker_build:
