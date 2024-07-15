@@ -33,12 +33,18 @@ body > main .gallery {
       justify-content: center;
       border-radius: 6px 6px 0 0;
 
+      &.read {
+        -webkit-filter: brightness(30%); /* Safari 6.0 - 9.0 */
+        filter: brightness(30%);
+      }
+
       img {
         object-fit: cover;
         width: 100%;
         height: 100%;
         border-radius: 6px 6px 0 0;
       }
+
     }
 
     &.folder .folder-img {
