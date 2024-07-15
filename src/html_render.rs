@@ -471,7 +471,7 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
                         a(href=format!("/infos/{}", &file.0.id)) {
                             div(class="cover") {
                                 // TODO set class cover
-                                img(src=format!("/cover/{}", &file.0.id), alt="cover", width="150", height="230", class= if file.2 {
+                                img(src=format!("/cover/{}", &file.0.id), alt="cover", class= if file.2 {
                                     "cover read"
                                 } else {
                                     "cover"
