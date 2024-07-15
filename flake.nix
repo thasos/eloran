@@ -20,7 +20,7 @@
             pkgs.cairo # PDF rendering
             pkgs.poppler # needed by Cairo
             pkgs.libarchive # needed by the final binary
-            pkgs.sqlite # client for database debugging
+            pkgs.sqlite-interactive # client for database debugging
           ];
           RUSTC_VERSION = overrides.toolchain.channel;
           RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
