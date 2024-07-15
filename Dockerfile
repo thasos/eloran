@@ -6,6 +6,7 @@ WORKDIR /opt/
 # init a new cargo repo
 RUN cargo new eloran
 COPY src/ /opt/eloran/src
+COPY css/ /opt/eloran/css
 COPY Cargo.* /opt/eloran
 # TODO use justfile ?
 COPY justfile /opt/eloran
