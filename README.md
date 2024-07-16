@@ -123,7 +123,7 @@ sudo dnf install libarchive-devel.x86_64
 
 ## TODO
 
-- [ ] display read status
+- [x] display read status
 - [ ] add flags (read status and bookmark) to folder
 - [x] hash password in database !!
 - [ ] store session in database (see `fn create_router()` in [src/http_server.rs](http_server.rs))
