@@ -2,8 +2,9 @@
 name: Rust
 
 on:
-  tags:
-    - "*.*.*"
+  push:
+    tags:
+      - '*'
 
 env:
   CARGO_TERM_COLOR: always
