@@ -39,6 +39,8 @@ Navigation directly by clicking on the left or right of the comic page (red rect
 
 ## Installation
 
+Default login is `admin` / `admin`, then you need to add a new library path (`/library` if you use podman run command below)
+
 ### Podman / Docker
 
 Feel free to customize listen port and path...
@@ -51,6 +53,7 @@ podman run -d -p 0.0.0.0:3200:3200 \
     --name eloran \
     ghcr.io/thasos/eloran:latest
 ```
+
 
 ### From source
 
