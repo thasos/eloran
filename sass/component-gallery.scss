@@ -3,7 +3,7 @@
 body > main .gallery {
   font-size: 16px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14.375em, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(12.375em, 1fr));
   justify-content: center;
   margin: 1.875em;
   margin-top: 3em;
@@ -48,7 +48,7 @@ body > main .gallery {
 
         &.blurred-background {
           object-fit: cover;
-          filter: blur(12px);
+          filter: blur(5px);
         }
 
         &.cover {
