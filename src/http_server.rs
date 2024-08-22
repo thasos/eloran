@@ -1355,7 +1355,6 @@ pub async fn start_http_server(bind: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::HeaderName;
     use axum_test::TestServer;
     use sqlx::{migrate::MigrateDatabase, Sqlite};
 
