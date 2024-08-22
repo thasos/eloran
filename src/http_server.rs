@@ -1366,11 +1366,15 @@ mod tests {
         sqlite::init_default_users().await;
         // create router
         let router = create_router();
+
         // root without auth
-        let client = TestServer::new(router.await).expect("new TestServer");
+        let mut client = TestServer::new(router.await).expect("new TestServer");
+        client.do_save_cookies();
+        client.expect_success();
+
         let res = client.get("/").await;
-        assert_eq!(res.status_code(), StatusCode::OK);
         insta::assert_yaml_snapshot!(res.text());
+
         // login
         let cred = Credentials {
             username: "admin".to_string(),
@@ -1382,47 +1386,32 @@ mod tests {
             // panic if form is not deserializable...
             .form(&cred)
             .await;
-        // 303 here...
-        assert_eq!(res.status_code(), StatusCode::SEE_OTHER);
-        // get cookie
-        let res_headers = res.headers();
-        assert!(res_headers.contains_key("set-cookie"));
-        let cookie = match res_headers.get("set-cookie") {
-            Some(cookie) => cookie.clone(),
-            None => panic!(),
-        };
+        res.assert_status_see_other()
+            .assert_has_header("set-cookie");
         insta::assert_yaml_snapshot!(res.text());
+
         // root with auth
-        let hdr_cookie = HeaderName::from_lowercase(b"cookie").expect("create cookie");
-        let res = client
-            .get("/")
-            .add_header(hdr_cookie.clone(), cookie.clone())
-            .await;
-        assert_eq!(res.status_code(), StatusCode::OK);
+        let res = client.get("/").await;
         insta::assert_yaml_snapshot!(res.text());
+
         // logout
-        let res = client
-            .get("/logout")
-            .add_header(hdr_cookie.clone(), cookie.clone())
-            .await;
-        assert_eq!(res.status_code(), StatusCode::OK);
+        let res = client.get("/logout").await;
         insta::assert_yaml_snapshot!(res.text());
+
         // root without auth
-        let res = client
-            .get("/")
-            .add_header(hdr_cookie.clone(), cookie.clone())
-            .await;
-        assert_eq!(res.status_code(), StatusCode::OK);
+        let res = client.get("/").await;
         insta::assert_yaml_snapshot!(res.text());
+
         // css error
-        let res = client.get("/css/not_found").await;
-        assert_eq!(res.status_code(), StatusCode::NOT_FOUND);
-        let res = client.get("/css/eloran.css").await;
-        let res_headers = match res.headers().get("content-type") {
-            Some(header) => header,
-            None => panic!(),
-        };
+        client
+            .get("/css/not_found")
+            .expect_failure()
+            .await
+            .assert_status_not_found();
+
+        let res_headers = client.get("/css/eloran.css").await.header("content-type");
         assert_eq!(res_headers, "text/css");
+
         // delete database
         let _ = Sqlite::drop_database(crate::DB_URL).await;
     }
