@@ -1385,9 +1385,10 @@ mod tests {
             .post("/login")
             // panic if form is not deserializable...
             .form(&cred)
+            .expect_failure()
             .await;
-        res.assert_status_see_other()
-            .assert_has_header("set-cookie");
+        res.assert_status_see_other();
+        res.assert_contains_header("set-cookie");
         insta::assert_yaml_snapshot!(res.text());
 
         // root with auth
@@ -1409,8 +1410,10 @@ mod tests {
             .await
             .assert_status_not_found();
 
-        let res_headers = client.get("/css/eloran.css").await.header("content-type");
-        assert_eq!(res_headers, "text/css");
+        client
+            .get("/css/eloran.css")
+            .await
+            .assert_header("content-type", "text/css");
 
         // delete database
         let _ = Sqlite::drop_database(crate::DB_URL).await;
