@@ -42,7 +42,7 @@ cairo-rs = { version = "0.19", features = ["png", "pdf"] }
 rand = { version = "0.8", features = ["min_const_gen"] }
 urlencoding = "2.1.2"
 serde = "1.0.164"
-sqlx = { version = "0.7", default-features = false, features = ["runtime-tokio", "tls-rustls", "sqlite", "macros", "migrate"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "sqlite", "macros", "migrate"] }
 tokio = { version = "1.24", features = ["full"] }
 argon2 = "0.5.2"
 password-auth = "1.0.0"
