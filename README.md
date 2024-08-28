@@ -1,6 +1,8 @@
 # Eloran
 
-Comics and Ebook web library written in rust, with reading, search, reading status, bookmarks...
+Almost usable Comics and Ebook web library written in rust, with reading, search, reading status, bookmarks...
+
+Still need develop.
 
 ## Intro
 
