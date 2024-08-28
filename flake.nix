@@ -9,6 +9,9 @@
       {
         devShell = pkgs.mkShell {
           buildInputs = [
+            # in case of following error message :
+            # `error: command failed: 'cargo': No such file or directory (os error 2)`
+            # just run `rustup update`
             pkgs.rustup pkgs.cargo pkgs.rustc pkgs.gcc # rust dev base
             pkgs.rust-analyzer pkgs.clippy # rust code quality
             pkgs.clang # C compiler
