@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - end of beta
 
+## [0.2.4] - 2024-08-29
+### Fixed
+- #12 Dockerfile user permission (set to root for now)
+### Changed
+- updated cargo and flakes deps
+
 ## [0.2.3] - 2024-07-16
 ### Fixed
 - Dockerfile alpine based works now
