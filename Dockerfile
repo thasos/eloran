@@ -31,13 +31,15 @@ COPY ./fonts ./fonts
 # poppler for pdf cover generation, libarchive for uncompression
 RUN apk --no-cache add poppler-glib libarchive
 
+# TODO handle user id at start (see issue #12)
 # root in container is evil
-RUN addgroup -g 10666 eloran \
- && adduser -D -u 10666 -G eloran eloran
-RUN mkdir /opt/eloran/sqlite \
- && chown eloran /opt/eloran/sqlite \
- && chmod +r /opt/eloran/images/* /opt/eloran/fonts/*
-USER eloran
+# RUN addgroup -g 10666 eloran \
+#  && adduser -D -u 10666 -G eloran eloran
+# RUN mkdir /opt/eloran/sqlite \
+#  && chown eloran /opt/eloran/sqlite \
+#  && chmod +r /opt/eloran/images/* /opt/eloran/fonts/*
+# USER eloran
+RUN mkdir /opt/eloran/sqlite
 
 # start
 # TODO catch ctrl+c in binary for gracefull and quick shutdown
