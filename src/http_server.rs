@@ -730,52 +730,58 @@ async fn change_user_handler(
     match auth_session.user {
         Some(user) => {
             if user.role == Role::Admin {
-                match sqlite::create_sqlite_pool().await {
-                    Ok(conn) => {
-                        let check_user = sqlite::get_user(None, Some(&user_id), &conn).await;
-                        if check_user.is_empty() {
-                            Html(html_render::simple_message(
-                                &format!("user id {} does not exists", &user_id),
-                                Some("/admin"),
-                            ))
-                            .into_response()
-                        } else {
-                            let mut user_to_update = check_user.first().unwrap().to_owned();
-                            if body.delete.is_some() && user_to_update.id != 1 {
-                                sqlite::delete_user(&user_to_update, &conn).await;
+                match hash_password(&body.password) {
+                    Ok(hashed_password) => match sqlite::create_sqlite_pool().await {
+                        Ok(conn) => {
+                            let check_user = sqlite::get_user(None, Some(&user_id), &conn).await;
+                            if check_user.is_empty() {
                                 Html(html_render::simple_message(
-                                    &format!("user {} deleted", &user_to_update.name),
-                                    Some("/admin"),
-                                ))
-                                .into_response()
-                            } else if body.update.is_some() {
-                                if !body.password.is_empty() {
-                                    // TODO hash password here (issue #13)
-                                    user_to_update.password_hash = body.password;
-                                }
-                                if let Some(is_admin) = body.is_admin {
-                                    if is_admin.as_str() == "on" {
-                                        user_to_update.role = Role::Admin;
-                                    }
-                                } else if user_to_update.id != 1 {
-                                    user_to_update.role = Role::User;
-                                }
-                                sqlite::update_user(&user_to_update, &conn).await;
-                                Html(html_render::simple_message(
-                                    &format!("user {} updated", &user_to_update.name),
+                                    &format!("user id {} does not exists", &user_id),
                                     Some("/admin"),
                                 ))
                                 .into_response()
                             } else {
-                                Html(html_render::simple_message(
-                                    "you can't delete admin account",
-                                    Some("/admin"),
-                                ))
-                                .into_response()
+                                let mut user_to_update = check_user.first().unwrap().to_owned();
+                                if body.delete.is_some() && user_to_update.id != 1 {
+                                    sqlite::delete_user(&user_to_update, &conn).await;
+                                    Html(html_render::simple_message(
+                                        &format!("user {} deleted", &user_to_update.name),
+                                        Some("/admin"),
+                                    ))
+                                    .into_response()
+                                } else if body.update.is_some() {
+                                    if !body.password.is_empty() {
+                                        user_to_update.password_hash = hashed_password;
+                                    }
+                                    if let Some(is_admin) = body.is_admin {
+                                        if is_admin.as_str() == "on" {
+                                            user_to_update.role = Role::Admin;
+                                        }
+                                    } else if user_to_update.id != 1 {
+                                        user_to_update.role = Role::User;
+                                    }
+                                    sqlite::update_user(&user_to_update, &conn).await;
+                                    Html(html_render::simple_message(
+                                        &format!("user {} updated", &user_to_update.name),
+                                        Some("/admin"),
+                                    ))
+                                    .into_response()
+                                } else {
+                                    Html(html_render::simple_message(
+                                        "you can't delete admin account",
+                                        Some("/admin"),
+                                    ))
+                                    .into_response()
+                                }
                             }
                         }
-                    }
-                    Err(_) => error_handler().into_response(),
+                        Err(_) => error_handler().into_response(),
+                    },
+                    Err(_) => Html(html_render::simple_message(
+                        "unable to hash password",
+                        Some("/"),
+                    ))
+                    .into_response(),
                 }
             } else {
                 Html(html_render::simple_message(
