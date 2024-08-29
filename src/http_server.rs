@@ -750,6 +750,7 @@ async fn change_user_handler(
                                 .into_response()
                             } else if body.update.is_some() {
                                 if !body.password.is_empty() {
+                                    // TODO hash password here (issue #13)
                                     user_to_update.password_hash = body.password;
                                 }
                                 if let Some(is_admin) = body.is_admin {
