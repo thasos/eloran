@@ -19,7 +19,7 @@
             pkgs.cargo-outdated
             # eloran specific
             pkgs.grass-sass # scss compiler
-            pkgs.pkg-config pkgs.glib # needed for linking C libraries (cairo, poppler, libarchive)
+            pkgs.pkg-config # needed for linking C libraries (cairo, poppler, libarchive)
             pkgs.cairo # PDF rendering
             pkgs.poppler # needed by Cairo
             pkgs.libarchive # needed by the final binary
