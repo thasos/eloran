@@ -146,3 +146,4 @@ sudo dnf install libarchive-devel.x86_64
 - [ ] true ebook reading
 - [ ] export read status
 - [ ] list "next to read"
+- [ ] remove `clap` and `config` dependencies (not really needed)
