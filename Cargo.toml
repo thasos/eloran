@@ -24,7 +24,7 @@ log = "0.4.17"
 tower = { version = "0.4", features = ["util"] }
 ulid = "1.0.0"
 jwalk = "0.8.1"
-image = "0.24.5"
+image = "0.24"
 epub = "2.0.0"
 # TODO remove b64
 base64 = "0.22"
