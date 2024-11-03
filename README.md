@@ -9,11 +9,12 @@ Still need develop.
 I used [Ubooquity](https://vaemendis.net/ubooquity/) during a few years, but unfortunatly it is not opensource, and there is no read status, so I decided to find another solution.
 
 I tried some alternatives :
-- [Komga](https://komga.org) : best project here I think, but no "folder view" 😥
+- [Komga](https://komga.org) : good project, but no simple "folder view" 😥
 - [Tanoshi](https://github.com/faldez/tanoshi) ☠ : works well, in rust too 🦀🚀, but no support for ebooks
 - [Calibre web](https://github.com/janeczku/calibre-web) or [BicBucStriim](https://github.com/rvolz/BicBucStriim) : I just can't use Calibre's classification system
 - [Kavita](https://github.com/Kareadita/Kavita) : nice project too, but I don't like the Collections system (feels like Calibre)
 - [Nextcloud epubreader](https://apps.nextcloud.com/apps/epubreader) : an old app, but it doesn't work with most of my collection
+- [Stump](https://github.com/stumpapp/stump) : very nice project (the best in the list ?), in rust too 🦀🚀 ! I found it after created Eloran 😅
 
 So here I am, a personal project named after my childrens ([Elora](https://en.wikipedia.org/wiki/Elora_Danan) and [Revan](https://en.wikipedia.org/wiki/Revan)).
 
