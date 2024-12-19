@@ -861,8 +861,9 @@ pub fn resize_cover(cover: image::DynamicImage) -> image::DynamicImage {
     // TODO do not keep ratio ? crop ? the max heigh is the most important
     // TODO test thumbnail fn :
     // https://docs.rs/image/latest/image/enum.DynamicImage.html#method.thumbnail
-    // cover.resize(150, 230, FilterType::Triangle)
-    cover.resize(180, 280, FilterType::Triangle)
+    // cover.resize(180, 280, FilterType::Triangle) // moy 20 ko
+    // cover.resize(360, 560, FilterType::Triangle) // moy 40 ko
+    cover.resize(280, 430, FilterType::Triangle) // moy 60 ko
 
     // // test crate fast_image_resize ?
     // use fast_image_resize as fir;
