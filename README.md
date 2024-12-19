@@ -20,14 +20,17 @@ So here I am, a personal project named after my childrens ([Elora](https://en.wi
 
 Feel free to use, improve, and cry to my low code quality !
 
-- use a sqlite database
-- store ebooks and comcis covers in database (~10ko per cover, almost 160 Mo for 15000 files)
-- multiple users, with bookmarks pages, reading status with page number (not for pdf), [argon2](https://en.wikipedia.org/wiki/Argon2) hashed password
-- periodic scan of libraries folders
-- no cached data, comics images are extracted on the fly
-- comics pages responsive size for optimized mobile network usage
-- small binary : 5 Mio, alpine based image : 13 Mio
+## Features
+
+- use a **sqlite** database
+- store ebooks and comcis **covers in database** (*~10ko per cover, almost 160 Mo for 15000 files*)
+- multiple **users**, with **bookmarks** pages, **reading status** with page number (not for pdf), [argon2](https://en.wikipedia.org/wiki/Argon2) hashed password
+- **keep filesystem tree**, with periodic scan of the **multiple libraries**
+- no cached data, comics images are **extracted on the fly**
+- comics pages responsive size for **optimized mobile network usage**
+- **small binary** : 5 Mio, alpine based image : 13 Mio
 - small css, small compressed svg, no javascript
+- main page loading cost : *5 requests, 164.54 kB / 987 B transferred* ⚡ **less than 1 kB !** ⚡
 - rust 🦀🚀
 
 ## Screenshots
