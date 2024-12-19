@@ -1061,6 +1061,100 @@ async fn get_root(auth_session: AuthSession) -> impl IntoResponse {
     }
 }
 
+// TODO factorize...
+fn get_svg(svg_filename: &str) -> impl IntoResponse {
+    let image = fs::read(svg_filename);
+    match image {
+        Ok(image) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, "image/svg+xml"),
+                (header::CONTENT_ENCODING, "gzip"),
+                (header::VARY, "Accept-Encoding"),
+                (header::CACHE_CONTROL, "public, max-age=604800"),
+            ],
+            image,
+        )
+            .into_response(),
+        Err(_) => {
+            error!("{svg_filename} not found");
+            // TODO true 404
+            (StatusCode::NOT_FOUND, "image not found").into_response()
+        }
+    }
+}
+fn get_png(png_filename: &str) -> impl IntoResponse {
+    let image = fs::read(png_filename);
+    match image {
+        Ok(image) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, "image/png"),
+                (header::VARY, "Accept-Encoding"),
+                (header::CACHE_CONTROL, "public, max-age=604800"),
+            ],
+            image,
+        )
+            .into_response(),
+        Err(_) => {
+            error!("{png_filename} not found");
+            // TODO true 404
+            (StatusCode::NOT_FOUND, "image not found").into_response()
+        }
+    }
+}
+async fn get_root_file(Path(path): Path<String>) -> impl IntoResponse {
+    info!("get /{}", &path);
+    match path.as_str() {
+        "favicon.svgz" => get_svg("images/favicon.svgz").into_response(),
+        "favicon-96x96.png" => get_png("images/favicon-96x96.png").into_response(),
+        "favicon.ico" => {
+            let image = fs::read("images/favicon.ico");
+            match image {
+                Ok(image) => (
+                    StatusCode::OK,
+                    [
+                        (header::CONTENT_TYPE, "image/vnd.microsoft.icon"),
+                        (header::VARY, "Accept-Encoding"),
+                        (header::CACHE_CONTROL, "public, max-age=604800"),
+                    ],
+                    image,
+                )
+                    .into_response(),
+                Err(_) => {
+                    error!("{path} not found");
+                    // TODO true 404
+                    (StatusCode::NOT_FOUND, "image not found").into_response()
+                }
+            }
+        }
+        "apple-touch-icon.png" => get_png("images/apple-touch-icon.png").into_response(),
+        "web-app-manifest-192x192.png" => {
+            get_png("images/web-app-manifest-192x192.png").into_response()
+        }
+        "web-app-manifest-512x512.png" => {
+            get_png("images/web-app-manifest-512x512.png").into_response()
+        }
+        "site.webmanifest" => {
+            let webmanifest = include_bytes!("../site.webmanifest");
+            let webmanifest = match std::str::from_utf8(webmanifest) {
+                Ok(webmanifest) => webmanifest.to_string(),
+                Err(_) => String::from(""),
+            };
+            (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, "application/manifest+json"),
+                    (header::CACHE_CONTROL, "public, max-age=604800"),
+                ],
+                webmanifest,
+            )
+                .into_response()
+        }
+        _ => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
+}
+
 /// create css from binary if not found on disk
 // TODO add a clap option to specify css directory
 // TODO use struct ?
@@ -1304,6 +1398,7 @@ async fn create_router() -> Router {
                 // TODO PROTECT HERE : add a layer (Role::User) if possible
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
                 .route("/", get(get_root))
+                .route("/:path", get(get_root_file))
                 .route("/css/*path", get(get_css))
                 .route("/fonts/*path", get(get_fonts))
                 .with_state(css)

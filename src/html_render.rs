@@ -9,6 +9,14 @@ fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 
         meta(charset="UTF-8");
         meta(name="viewport", content="width=device-width");
         link(rel="stylesheet", href="/css/eloran.css");
+        // favicon
+        link(rel="icon", type="image/png", href="/favicon-96x96.png", sizes="96x96");
+        link(rel="icon", type="image/svgz+xml", href="/favicon.svgz");
+        link(rel="shortcut icon", href="/favicon.ico");
+        link(rel="apple-touch-icon", sizes="180x180", href="/apple-touch-icon.png");
+        meta(name="apple-mobile-web-app-title", content="Eloran");
+        link(rel="manifest", href="/site.webmanifest");
+        // cache control
         meta(http-equiv="Cache-Control", content="no-cache, no-store, must-revalidate");
         meta(http-equiv="Pragma", content="no-cache");
         meta(http-equiv="Expires", content="0");
