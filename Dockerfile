@@ -1,30 +1,46 @@
 # hadolint global ignore=DL3059
 # builder
-# need almost 4.5 GB and 6 minutes on a i5-8400
-FROM docker.io/rustlang/rust:nightly-alpine AS builder
+# need almost 4.5 GB and 5 minutes on a i7-8700K
+FROM docker.io/rust:1.83-alpine3.21 AS builder
+
+# dependencies
+RUN apk --no-cache add just upx musl-dev \
+                       pkgconfig glib-dev cairo-dev poppler-dev libarchive-dev \
+ && rustup default nightly \
+ && rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-musl \
+ && cargo install grass
+
 WORKDIR /opt/
+
 # init a new cargo repo
 RUN cargo new eloran
 COPY src/ /opt/eloran/src
 COPY css/ /opt/eloran/css
+COPY sass/ /opt/eloran/sass
 COPY Cargo.* /opt/eloran
-# TODO use justfile ?
+COPY site.webmanifest /opt/eloran
 COPY justfile /opt/eloran
+
 WORKDIR /opt/eloran
-# no need for one layer here, it's just a builder
-# dependencies
-RUN apk --no-cache add just upx musl-dev pkgconfig glib-dev cairo-dev poppler-dev libarchive-dev
-# nightly target for some build features
-RUN rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-musl
-RUN RUSTFLAGS='-C target-feature=-crt-static' cargo +nightly build --release -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort --target x86_64-unknown-linux-musl
+
+RUN just build_musl
+
 # compress binary (only for network and disk size, it will be uncompressed in ram)
 RUN upx target/x86_64-unknown-linux-musl/release/eloran
 
 # runner
-FROM docker.io/alpine:3.20
+FROM docker.io/alpine:3.21
+
+LABEL "org.opencontainers.image.base.name" = "ghcr.io/thasos/eloran" \
+      "org.opencontainers.image.created" = "2024-12-20T17:45:05Z" \
+      "org.opencontainers.image.revision" = "813e06b" \
+      "org.opencontainers.image.source" = "https://github.com/thasos/eloran" \
+      "org.opencontainers.image.url" = "https://github.com/thasos/eloran/pkgs/container/eloran" \
+      "org.opencontainers.image.version" = "0.3.0"
+
 WORKDIR /opt/eloran
 COPY --from=builder /opt/eloran/target/x86_64-unknown-linux-musl/release/eloran /opt/eloran
-# TODO put thoses default files directly in the binary
+
 COPY ./images ./images
 COPY ./fonts ./fonts
 
@@ -39,6 +55,7 @@ RUN apk --no-cache add poppler-glib libarchive
 #  && chown eloran /opt/eloran/sqlite \
 #  && chmod +r /opt/eloran/images/* /opt/eloran/fonts/*
 # USER eloran
+
 RUN mkdir /opt/eloran/sqlite
 
 # start
