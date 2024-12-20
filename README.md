@@ -1,8 +1,6 @@
 # Eloran
 
-Almost usable Comics and Ebook web library written in rust, with reading, search, reading status, bookmarks...
-
-Still need develop.
+Comics and Ebook web library written in rust, with reading, search, reading status, bookmarks...
 
 ## Intro
 
@@ -76,24 +74,9 @@ If you don't use [just](https://github.com/casey/just), use it 😁 or just laun
 
 ### Run dependencies
 
-Nix
-```
-TODO
-```
-
-Arch
-```
-TODO
-```
-
 Debian/Ubuntu (tested with image `debian:sid-slim`)
 ```
 sudo apt install libpoppler-glib8t64 libarchive13t64
-```
-
-Rpm style
-```
-TODO
 ```
 
 ### Build dependencies
