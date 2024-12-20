@@ -7,10 +7,10 @@ body > main .gallery {
   justify-content: center;
   margin: 1.875em;
   margin-top: 3em;
-  gap: 1.875em;
+  row-gap: 1.875em;
 
   article {
-    width: 100%;
+    width: 80%;
     height: 21.25em;
     border-radius: 8px;
     position: relative;
