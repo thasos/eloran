@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - end of beta
 
+## [0.3.0] - 2024-12-20
+### Changed
+- new login page (still WIP)
+- new file info page (still WIP)
+- remove some dependancies : clap and chrono
+- increase cover size for better display
+- add favicon
+
 ## [0.2.5] - 2024-08-29
 ### Fixed
 - #13 fixed password update via admin panel

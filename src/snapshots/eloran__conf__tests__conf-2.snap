@@ -1,0 +1,6 @@
+---
+source: src/conf.rs
+expression: "init_conf(vec![\"eloran\".to_string(), \"127.0.0.1:8080\".to_string()])"
+---
+bind: "127.0.0.1:8080"
+library_path: []

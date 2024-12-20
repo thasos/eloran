@@ -1050,13 +1050,21 @@ async fn library_handler(
 
 async fn get_root(auth_session: AuthSession) -> impl IntoResponse {
     match auth_session.user {
-        Some(user) => {
-            debug!("user found");
-            Html(html_render::homepage(&user))
+        Some(_) => {
+            debug!("GET /, user found, redirect to /library");
+            axum::response::Redirect::permanent("/library").into_response()
         }
         None => {
-            debug!("no user found, login form");
-            Html(html_render::login_form())
+            debug!("GET /, no user found, login form");
+            (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, "text/html"),
+                    (header::VARY, "Accept-Encoding"),
+                ],
+                Html(html_render::login_form()),
+            )
+                .into_response()
         }
     }
 }
@@ -1445,7 +1453,7 @@ pub async fn start_http_server(bind: &str) -> Result<(), String> {
     axum::serve(listener, router.await.into_make_service())
         .await
         .expect("unable to bind http server");
-    // TODO check si server bien started
+    // TODO check if server started
     // axum::Server::bind(&bind)
     //     .serve(router.await.into_make_service())
     //     .await
@@ -1460,6 +1468,25 @@ mod tests {
     use axum_test::TestServer;
     use sqlx::{migrate::MigrateDatabase, Sqlite};
 
+    #[tokio::test]
+    async fn test_favicon() {
+        let router = create_router();
+        let client = TestServer::new(router.await).expect("new TestServer");
+        let favicon = client.get("/favicon.ico").await;
+        assert_eq!(favicon.status_code(), StatusCode::OK);
+        let touchicon = client.get("/apple-touch-icon.png").await;
+        assert_eq!(touchicon.status_code(), StatusCode::OK);
+        let manifest = client.get("/site.webmanifest").await;
+        assert_eq!(manifest.status_code(), StatusCode::OK);
+        let largeicon = client.get("/web-app-manifest-192x192.png").await;
+        assert_eq!(largeicon.status_code(), StatusCode::OK);
+        // test 404
+        client
+            .get("/css/not_found")
+            .expect_failure()
+            .await
+            .assert_status_not_found();
+    }
     #[tokio::test]
     async fn test_login_logout() {
         // init db
@@ -1494,7 +1521,9 @@ mod tests {
         insta::assert_yaml_snapshot!(res.text());
 
         // root with auth
-        let res = client.get("/").await;
+        let res = client.get("/").expect_failure().await;
+        assert_eq!(res.status_code(), StatusCode::PERMANENT_REDIRECT);
+        let res = client.get("/library").await;
         assert_eq!(res.status_code(), StatusCode::OK);
         insta::assert_yaml_snapshot!(res.text());
 

@@ -2,6 +2,8 @@ use crate::http_server::{Role, User};
 use crate::scanner::{DirectoryInfo, FileInfo, Library};
 
 use horrorshow::{helper::doctype, Raw, Template};
+use time::format_description;
+use time::OffsetDateTime;
 
 fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 'a> {
     box_html! {
@@ -158,14 +160,25 @@ pub fn admin(user: &User, library_list: Vec<Library>, user_list: Vec<User>) -> S
 
 pub fn login_form() -> String {
     let body_content = box_html! {
-        p { : "Please login :" }
-        p {
-            form(accept-charset="utf-8", action="/login", method="post") {
-            input(type="text", name="username", placeholder="username", required);
+        div(id="login", style="text-align: center;") {
             br;
-            input(type="password", name="password", placeholder="password", required);
             br;
-            input(type="submit", value="Login");
+            img(src="/images/library-icon.svgz");
+            br;
+            br;
+            p { : "Please login" }
+            br;
+            br;
+            p {
+                form(accept-charset="utf-8", action="/login", method="post") {
+                input(type="text", name="username", placeholder="username", required);
+                br;
+                br;
+                input(type="password", name="password", placeholder="password", required);
+                br;
+                br;
+                input(type="submit", value="Login");
+                }
             }
         }
     };
@@ -184,6 +197,13 @@ pub fn logout() -> String {
     render(body_content, Some(redirect_url))
 }
 
+fn timestamp_to_pretty_date(timestamp: i64) -> Option<String> {
+    let pretty_date_format = format_description::parse("[year]-[month]-[day]").ok()?;
+    let added_date = OffsetDateTime::from_unix_timestamp(timestamp).ok()?;
+    let pretty_added_date = added_date.format(&pretty_date_format).ok()?;
+    Some(pretty_added_date)
+}
+
 pub fn file_info(
     user: &User,
     file: &FileInfo,
@@ -193,36 +213,118 @@ pub fn file_info(
     up_link: String,
 ) -> String {
     let menu = menu(Some(user.to_owned()));
+    // we need to clone file infos, don't remember why...
     let file = file.clone();
+    // format added date
+    let pretty_added_date = match timestamp_to_pretty_date(file.added_date) {
+        Some(pretty_added_date) => pretty_added_date,
+        None => String::from("not available"),
+    };
+    // human readable file size without lib
+    let pretty_file_size = if file.size < 1024 * 1024 {
+        format!("{:.3} kB", file.size as f32 / 1024.00)
+    } else if file.size >= 1024 && file.size < 1024 * 1024 * 1024 {
+        format!("{} MB", file.size / 1024 / 1024)
+    } else {
+        format!("{:.1} GB", file.size as f64 / 1024.00 / 1024.00 / 1024.00)
+    };
+    // construct file library path for breadcrumb
+    let mut breadcrumb_link_path = String::new();
+    // separe path elements, delete absolute path...
+    let file_library_path: Vec<&str> = file
+        .parent_path
+        .split('/')
+        .skip_while(|s| *s != file.library_name)
+        .collect();
+    // ... and reassamble
+    let file_library_path = file_library_path.join("/");
+    // body
     let body_content = box_html! {
         : menu;
-        div(id="infos") {
-            h2(style="text-align: center;") {
-                a(href=format!("/read/{}/{}", file.id, current_page), class="navigation", target="_blank") : "📖 read file";
-                : " | " ;
-                a(href=format!("/download/{}", file.id), class="navigation") : "⤵ download";
-            }
-            h2 { a(href= up_link , class="navigation") : "↖️  up" }
-            div(id="flags") {
-                a(href=format!("/toggle/bookmark/{}", file.id)) : "toggle bookmarks";
-                br;
-                a(href=format!("/toggle/read_status/{}", file.id)) : "toggle read status";
-            }
-            div(id="infos") {
-                h4(style="text-align: center;") {
-                    : if bookmark_status { "⭐" } else { "" };
-                    : if read_status { "✅" } else { "" };
+        main {
+            header {
+                a(href="/library") {
+                    img(src="/images/library-icon.svgz") ;
+                    h1 { : &file.name ; }
                 }
-                h2(style="text-align: center;") { : file.name ; }
-                img(src=format!("/cover/{}", file.id), alt="cover", class="infos");
+            }
+            section(class="filters") {
+                ul(class="breadcrumb") {
+                    li { a(href=format!("/library"), class="navigation") : "Library" }
+                    div(class="border-arrow") { div(class="arrow") {} }
+                        // first, split only last element
+                        @ if let Some(rsplitted_current_path) = file_library_path.rsplit_once('/') {
+                            // then loop on all directories
+                            @ for sub_directory in rsplitted_current_path.0.split('/') {
+                                li {
+                                    a(href=format!(
+                                        "/library/{}",
+                                        { breadcrumb_link_path.push_str(&(sub_directory.to_owned() + "/")) ; &breadcrumb_link_path.trim_end_matches('/') }
+                                    ))
+                                    : sub_directory
+                                }
+                                div(class="border-arrow") { div(class="arrow") {} }
+                            }
+                            // last element of breadcrumb must be css class `selected`
+                            // and no arrow
+                            li(class="selected") { a(href=format!("/library/{}/{}", rsplitted_current_path.0, &rsplitted_current_path.1)) : rsplitted_current_path.1 }
+                        } else {
+                            // file is at the lib root
+                            li(class="selected") { a(href=format!("/library/{}", file_library_path)) : file_library_path }
+                        }
+
+                }
+                // TODO put search elsewhere in code ?
+                div(class="search") {
+                    form(accept-charset="utf-8", action="/search", method="post") {
+                        input(type="submit", value="");
+                        input(type="text", placeholder="Search...", name="query", value="");
+                    }
+                }
+            }
+
+            // file infos
+            div(id="infos", style="text-align: center;") {
+                br;
+                br;
+                br;
+                h2 {
+                    a(href= up_link , class="navigation") : "↖️  up";
+                    : " | " ;
+                    @ if file.format != "pdf" {
+                        a(href=format!("/read/{}/{}", file.id, current_page), class="navigation") : "📖 read file";
+                        : " | " ;
+                    }
+                    a(href=format!("/download/{}", file.id), class="navigation") : "⤵ download";
+                    : " | " ;
+                    a(href=format!("/toggle/bookmark/{}", file.id)) : if bookmark_status { "⭐ (remove from bookmarks)" } else { "(bookmark)" } ;
+                    : " | " ;
+                    a(href=format!("/toggle/read_status/{}", file.id)) : if read_status { "✅ (mark as unread)" } else { "(mark as read)" };
+                }
+                br;
+                br;
+                @ if file.format != "pdf" {
+                    a(href=format!("/read/{}/{}", file.id, current_page), class="navigation") {
+                        img(src=format!("/cover/{}", file.id), alt="cover", class="infos");
+                    }
+                } else {
+                    a(href=format!("/download/{}", file.id), class="navigation") {
+                        img(src=format!("/cover/{}", file.id), alt="cover", class="infos");
+                    }
+                }
+                br;
+                br;
                 p(style="text-align: center;") {
-                    : format!("size : {}", file.size) ;
+                    : file.name ;
                     br;
-                    : format!("page : {}/{}", current_page, file.total_pages) ;
                     br;
-                    : format!("type : {}",file.format) ;
+                    : format!("size : {}", pretty_file_size) ;
                     br;
-                    : format!("added : {}",file.added_date) ;
+                    : format!("pages : {}/{}", current_page, file.total_pages) ;
+                    br;
+                    : format!("type : {}", file.format) ;
+                    br;
+                    : format!("added : {}", pretty_added_date) ;
                 }
             }
         }
@@ -277,6 +379,20 @@ pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
     };
     let body_content = box_html! {
         : menu;
+        h1(id="navigation", align="center") {
+            // TODO go to page number
+            a(href=format!("/read/{}/{}", file.id, previous_page), class="navigation") : "⏪";
+            : " | " ;
+            a(href=format!("/read/{}/{}", file.id, 0), class="navigation") : "⏮ start";
+            : " | " ;
+            a(href=format!("/infos/{}", file.id), class="navigation") : "return to file info";
+            : " | " ;
+            a(href=format!("/read/{}/{}", file.id, file.total_pages - 1), class="navigation") : "end ⏭";
+            : " | " ;
+            a(href=format!("/read/{}/{}", file.id, next_page), class="navigation") : "⏩";
+        }
+        br;
+        br;
         div(class="navigation-map") {
             picture {
                 source(srcset=format!("/comic_page/{}/{}/800px", file.id, page), media="(max-width: 800px)", class="comic-content");
@@ -285,21 +401,10 @@ pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
                 img(src=format!("/comic_page/{}/{}/orig", file.id, page), alt="TODO_PAGE_NUM", class="comic-content", usemap="navigation-map");
                 // not a html map, because we need percentage coords
                 // thx https://stackoverflow.com/a/26231487
+                a(href="", style="top: 0%; left: 30%; width: 40%; height: 3%;"); // zone for menu
                 a(href=format!("/read/{}/{}", file.id, previous_page), style="top: 0%; left: 0%; width: 30%; height: 100%;");
                 a(href=format!("/read/{}/{}", file.id, next_page), style="top: 0%; left: 70%; width: 30%; height: 100%;");
             }
-        }
-        h1(id="navigation", align="center") {
-            // TODO go to page number
-            a(href=format!("/read/{}/{}", file.id, previous_page), class="navigation") : "⬅️";
-            : " | " ;
-            a(href=format!("/read/{}/{}", file.id, 0), class="navigation") : "start";
-            : " | " ;
-            a(href=format!("/infos/{}", file.id), class="navigation") : "close";
-            : " | " ;
-            a(href=format!("/read/{}/{}", file.id, file.total_pages - 1), class="navigation") : "end";
-            : " | " ;
-            a(href=format!("/read/{}/{}", file.id, next_page), class="navigation") : "➡️";
         }
     };
     render(body_content, None)
@@ -429,8 +534,10 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
             // if lists are empty, print a message
             @ if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() && &list_to_display.library_path == "/" {
                 p {
-                    : format!("Please add a library in ");
-                    a(href="/admin") : "admin panel"
+                    br;
+                    br;
+                    br;
+                    a(href="/admin") : "Please add a library in Administration panel"
                 }
             } else if list_to_display.directories_list.is_empty() && list_to_display.files_list.is_empty() {
                 p {
@@ -554,18 +661,6 @@ fn menu<'a>(user: Option<User>) -> Box<dyn horrorshow::RenderBox + 'a> {
     menu_content
 }
 
-pub fn homepage(user: &User) -> String {
-    // TODO moche (obligé le clone  ?)
-    let menu = menu(Some(user.to_owned()));
-    let body_content = box_html! {
-        : menu;
-        div(id="home-content") {
-        : "content"
-        }
-    };
-    render(body_content, None)
-}
-
 /// take body content html box, and return all the page with headers and full body
 fn render(body_content: Box<dyn horrorshow::RenderBox>, redirect_url: Option<&str>) -> String {
     let full_page = html! { : doctype::HTML;
@@ -679,10 +774,5 @@ mod tests {
         let menu = menu(Some(user));
         let rendered_menu = render(menu, Some(redirect_url));
         insta::assert_yaml_snapshot!(rendered_menu)
-    }
-    #[test]
-    fn test_homepage() {
-        let user = User::default();
-        insta::assert_yaml_snapshot!(homepage(&user))
     }
 }

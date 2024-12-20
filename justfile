@@ -4,7 +4,7 @@ _default:
 
 run:
     just grass_compile
-    cargo run -- -v
+    cargo run
 
 test:
     just grass_compile

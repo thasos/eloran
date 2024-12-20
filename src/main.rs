@@ -10,6 +10,7 @@ mod sqlite;
 extern crate log;
 #[macro_use]
 extern crate horrorshow;
+use std::env;
 use std::time::Duration;
 
 use crate::conf::init_conf;
@@ -19,7 +20,8 @@ const DB_URL: &str = "sqlite://sqlite/eloran.db";
 #[tokio::main]
 async fn main() -> Result<(), String> {
     // conf
-    let conf: conf::Conf = init_conf();
+    let args: Vec<String> = env::args().collect();
+    let conf: conf::Conf = init_conf(args);
 
     // databases
     sqlite::init_database().await?;

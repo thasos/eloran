@@ -92,9 +92,9 @@ pub async fn epub(file: &FileInfo, page: i32) -> String {
     // pages
     let total_pages = doc.get_num_pages();
     // resources
-    let toto = match doc.get_current_id() {
-        Some(toto) => toto,
-        None => "toto".to_string(),
+    let id = match doc.get_current_id() {
+        Some(id) => id,
+        None => "some ID".to_string(),
     };
     // add css
     // let extracss = "body { background-color: #303030; color: white }";
@@ -121,7 +121,7 @@ pub async fn epub(file: &FileInfo, page: i32) -> String {
              content: {}<br />
              <br /><br />
             ",
-            current_page, total_pages, toto, page_content
+            current_page, total_pages, id, page_content
         ));
         doc.go_next();
     }

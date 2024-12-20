@@ -3,6 +3,8 @@ body > main > header {
   background-color: var(--color-theme-1);
   border-top: 2px solid #000000;
   border-bottom: 5px solid #000000;
+  overflow:hidden;
+  white-space:nowrap;
 
   img {
     position: absolute;

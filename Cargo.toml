@@ -1,6 +1,6 @@
 [package]
 name = "eloran"
-version = "0.2.3"
+version = "0.3.0"
 edition = "2021"
 description = "Comics and Ebook web library written in rust, with reading, search, reading status, bookmarks..."
 documentation = "https://github.com/thasos/eloran"
@@ -36,8 +36,6 @@ compress-tools = "0.15"
 # see https://github.com/OSSystems/compress-tools-rs/issues/123
 # compress-tools = { git = " https://github.com/OSSystems/compress-tools-rs", rev = "e2af8dafce216f5bf598a34fc7fc73d47e1a2d55" }
 libc = "0.2.140"
-# clap = { version = "4.1.13", default-features = false, features = ["std"] }
-clap = "4.1.13"
 config = "0.14"
 poppler-rs = "0.23"
 cairo-rs = { version = "0.19", features = ["png", "pdf"] }
@@ -50,7 +48,7 @@ argon2 = "0.5.2"
 password-auth = "1.0.0"
 axum-login = "0.10.2"
 async-trait = "0.1.74"
-time = "0.3.30"
+time = { version = "0.3.30", features = ["formatting"] }
 # async-sqlx-session = { version = "0.4.0", features = ["sqlite"] }
 
 [dev-dependencies]
