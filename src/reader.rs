@@ -54,15 +54,12 @@ pub async fn get_comic_page(file: &FileInfo, page: i32, size: &str) -> Option<Ve
                     _ => dyn_image_comic_page,
                 };
                 // encode to jpeg
-                // TODO do not encode if already jpeg
+                // TODO do not encode if already jpeg ?
                 let mut bytes_comic_page: Vec<u8> = Vec::new();
-                dyn_image_comic_page
-                    .write_to(
-                        &mut Cursor::new(&mut bytes_comic_page),
-                        // jpeg quality
-                        image::ImageOutputFormat::Jpeg(75),
-                    )
-                    .ok()?;
+                let mut writer = Cursor::new(&mut bytes_comic_page);
+                let jpeg_encoder =
+                    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 75);
+                dyn_image_comic_page.write_with_encoder(jpeg_encoder).ok()?;
                 Some(bytes_comic_page)
             } else {
                 None
