@@ -39,7 +39,8 @@ libc = "0.2.140"
 config = "0.15.7"
 poppler-rs = "0.24.1"
 cairo-rs = { version = "0.20.7", features = ["png", "pdf"] }
-rand = { version = "0.8.5", features = ["min_const_gen"] }
+rand = "0.9.0"
+# rand = { version = "0.8.5", features = ["min_const_gen"] }
 urlencoding = "2.1.2"
 serde = "1.0.164"
 sqlx = { version = "0.8.3", default-features = false, features = ["runtime-tokio", "tls-rustls", "sqlite", "macros", "migrate"] }
