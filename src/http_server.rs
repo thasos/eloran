@@ -21,12 +21,12 @@ use axum_login::{
     AuthManagerLayerBuilder,
 };
 use serde::{Deserialize, Serialize};
+use sqlx::pool::Pool;
+use sqlx::Sqlite;
 use std::{collections::VecDeque, fs, process};
 use time::Duration;
 use tower::ServiceBuilder;
 use urlencoding::decode;
-
-// struct DatabaseConnection(sqlx::pool::Pool<sqlx::Sqlite>);
 
 // User Struct
 // TODO virer Default ?
@@ -568,23 +568,18 @@ async fn reader_handler(
 #[axum::debug_handler]
 async fn admin_handler(
     auth_session: AuthSession,
-    // DatabaseConnection(conn): DatabaseConnection,
+    State(conn): State<Pool<Sqlite>>,
 ) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
             info!("get /admin : {}", &user.name);
             if user.role == Role::Admin {
-                match sqlite::create_sqlite_pool().await {
-                    Ok(conn) => {
-                        // libraries
-                        let library_list = sqlite::get_library(None, None, &conn).await;
-                        // users
-                        let user_list = sqlite::get_user(None, None, &conn).await;
-                        // render
-                        Html(html_render::admin(&user, library_list, user_list)).into_response()
-                    }
-                    Err(_) => error_handler().into_response(),
-                }
+                // libraries
+                let library_list = sqlite::get_library(None, None, &conn).await;
+                // users
+                let user_list = sqlite::get_user(None, None, &conn).await;
+                // render
+                Html(html_render::admin(&user, library_list, user_list)).into_response()
             } else {
                 // TODO better display, and redirect to `/` after 3s
                 Html("You are not allowed to see this page").into_response()
@@ -1197,8 +1192,10 @@ fn create_css() -> String {
 }
 
 /// serve css (custom file can be loaded)
-async fn get_css(State(css): State<String>, Path(path): Path<String>) -> impl IntoResponse {
+async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
     info!("get /css/{}", &path);
+    // store css file in var
+    let css = create_css();
     // return css if found
     match path.as_str() {
         "eloran.css" => (
@@ -1376,9 +1373,6 @@ async fn create_router() -> Router {
             let backend = Backend::new(pool.clone());
             let auth_service = AuthManagerLayerBuilder::new(backend, session_layer).build();
 
-            // custom css handler, will be passed to the css route
-            let css = create_css();
-
             // Router creation
             Router::new()
                 // 🔒🔒🔒 ADMIN PROTECTED 🔒🔒🔒
@@ -1411,7 +1405,7 @@ async fn create_router() -> Router {
                 .route("/{path}", get(get_root_file))
                 .route("/css/{*path}", get(get_css))
                 .route("/fonts/{*path}", get(get_fonts))
-                .with_state(css)
+                // .with_state(css)
                 .with_state(pool)
                 .route("/images/{*path}", get(get_images)) // ⚠️  UI images, not covers
                 .route("/login", post(login_handler))
