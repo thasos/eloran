@@ -84,7 +84,6 @@ async fn reading_handler(
                 None => &empty_library,
             }
             .to_owned();
-            conn.close().await;
             // response
             let list_to_display = html_render::LibraryDisplay {
                 user: user.clone(),
@@ -130,7 +129,6 @@ async fn bookmarks_handler(
                 Some(library_path) => library_path.to_owned(),
                 None => Library::new(),
             };
-            conn.close().await;
             // response
             let list_to_display = html_render::LibraryDisplay {
                 user: user.clone(),
@@ -180,7 +178,6 @@ async fn search_handler(
             // lib path
             let library_path = sqlite::get_library(None, None, &conn).await;
             let library_path = library_path.first().unwrap().to_owned();
-            conn.close().await;
             // response
             let list_to_display = html_render::LibraryDisplay {
                 user: user.clone(),
@@ -272,7 +269,6 @@ async fn infos_handler(
             let current_page =
                 sqlite::get_current_page_from_file_id(user.id, &file.id, &conn).await;
 
-            conn.close().await;
             Html(html_render::file_info(
                 user,
                 &file,
@@ -297,7 +293,6 @@ async fn flag_handler(
             let user = sqlite::get_user(Some(&user.name), None, &conn).await;
             let user = user.first().unwrap();
             let flag_status = sqlite::set_flag_status(&flag, user.id, &file_id, &conn).await;
-            conn.close().await;
             Html(html_render::flag_toggle(user, flag_status, &file_id, &flag))
         }
         None => unauthorized_response(),
@@ -343,7 +338,6 @@ async fn cover_handler(
                 "epub" | "pdf" | "cbz" | "cbr" | "cb7" => {
                     // get cover from database
                     let u8_cover = sqlite::get_cover_from_id(&file, &conn).await;
-                    conn.close().await;
                     match u8_cover {
                         Some(cover) => {
                             if !cover.is_empty() {
@@ -525,7 +519,6 @@ async fn reader_handler(
                 // TODO real rendered page
                 _ => Html(html_render::simple_message("no yet supported", None)).into_response(),
             };
-            conn.close().await;
             response
         }
         None => unauthorized_response().into_response(),
@@ -972,7 +965,6 @@ async fn library_handler(
                     directories_list
                 };
                 directories_list.sort();
-                conn.close().await;
                 html_render::LibraryDisplay {
                     user: user.clone(),
                     directories_list,
