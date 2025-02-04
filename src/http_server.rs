@@ -10,20 +10,20 @@ use argon2::{
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Form;
-// use axum::{error_handling::HandleErrorLayer, BoxError};
+use axum::{error_handling::HandleErrorLayer, BoxError};
 use axum::{
     extract::{Path, State},
     routing::{get, post},
     Router,
 };
-// use axum_login::{
-//     login_required,
-//     tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
-//     AuthManagerLayerBuilder,
-// };
+use axum_login::{
+    login_required,
+    tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
+    AuthManagerLayerBuilder,
+};
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, fs, process};
-// use time::Duration;
+use time::Duration;
 use tower::ServiceBuilder;
 use urlencoding::decode;
 
@@ -1323,11 +1323,11 @@ pub struct Credentials {
 pub struct Backend {
     db: SqlitePool,
 }
-// impl Backend {
-//     pub fn new(db: SqlitePool) -> Self {
-//         Self { db }
-//     }
-// }
+impl Backend {
+    pub fn new(db: SqlitePool) -> Self {
+        Self { db }
+    }
+}
 #[async_trait]
 impl AuthnBackend for Backend {
     type User = User;
@@ -1363,23 +1363,24 @@ pub type AuthSession = axum_login::AuthSession<Backend>;
 async fn create_router() -> Router {
     match sqlite::create_sqlite_pool().await {
         Ok(pool) => {
-            // // Session layer
-            // // see example : https://github.com/maxcountryman/axum-login/blob/main/examples
-            // // This uses `tower-sessions` to establish a layer that will provide the session
-            // // as a request extension.
-            // let session_store = MemoryStore::default(); // TODO do not use MemoryStore in prod ?
-            // let session_layer = SessionManagerLayer::new(session_store)
-            //     .with_secure(false)
-            //     .with_expiry(Expiry::OnInactivity(Duration::days(1)));
-            // // Auth service
-            // // This combines the session layer with our backend to establish the auth
-            // // service which will provide the auth session as a request extension.
-            // let backend = Backend::new(pool);
+            // Session layer
+            // see example : https://github.com/maxcountryman/axum-login/blob/main/examples
+            // This uses `tower-sessions` to establish a layer that will provide the session
+            // as a request extension.
+            let session_store = MemoryStore::default(); // TODO do not use MemoryStore in prod ?
+            let session_layer = SessionManagerLayer::new(session_store)
+                .with_secure(false)
+                .with_expiry(Expiry::OnInactivity(Duration::days(1)));
+            // Auth service
+            // This combines the session layer with our backend to establish the auth
+            // service which will provide the auth session as a request extension.
+            let backend = Backend::new(pool.clone());
             // let auth_service = ServiceBuilder::new()
-            //     .layer(HandleErrorLayer::new(|_: BoxError| async {
+            //     .layer(HandleErrorLayer::<_, Router>::new(|_: BoxError| async {
             //         StatusCode::BAD_REQUEST
             //     }))
             //     .layer(AuthManagerLayerBuilder::new(backend, session_layer).build());
+            let auth_service = AuthManagerLayerBuilder::new(backend, session_layer).build();
 
             // custom css handler, will be passed to the css route
             let css = create_css();
@@ -1409,7 +1410,7 @@ async fn create_router() -> Router {
                 )
                 .route("/infos/{file_id}", get(infos_handler))
                 .route("/cover/{file_id}", get(cover_handler))
-                // .route_layer(login_required!(Backend, login_url = "/"))
+                .route_layer(login_required!(Backend, login_url = "/"))
                 // TODO PROTECT HERE : add a layer (Role::User) if possible
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
                 .route("/", get(get_root))
@@ -1425,7 +1426,7 @@ async fn create_router() -> Router {
                 // ---
                 // layers for redirect when not logged
                 // see https://github.com/maxcountryman/axum-login/issues/22#issuecomment-1345403733
-                // .layer(auth_service)
+                .layer(auth_service)
                 .layer(
                     ServiceBuilder::new()
                         // .layer(session_layer)
