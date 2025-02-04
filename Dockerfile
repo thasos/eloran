@@ -36,7 +36,7 @@ LABEL "org.opencontainers.image.base.name" = "ghcr.io/thasos/eloran" \
       "org.opencontainers.image.revision" = "813e06b" \
       "org.opencontainers.image.source" = "https://github.com/thasos/eloran" \
       "org.opencontainers.image.url" = "https://github.com/thasos/eloran/pkgs/container/eloran" \
-      "org.opencontainers.image.version" = "0.3.0"
+      "org.opencontainers.image.version" = "0.3.1"
 
 WORKDIR /opt/eloran
 COPY --from=builder /opt/eloran/target/x86_64-unknown-linux-musl/release/eloran /opt/eloran

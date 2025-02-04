@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - end of beta
 
+## [0.3.1] - 2025-02-04
+### Changed
+- update some deps (axum*, image, rand, tokio, tower)
+- share sqlite pool between axum routes
+
 ## [0.3.0] - 2024-12-20
 ### Changed
 - new login page (still WIP)
