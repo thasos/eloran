@@ -1388,34 +1388,37 @@ async fn create_router() -> Router {
             Router::new()
                 // 🔒🔒🔒 ADMIN PROTECTED 🔒🔒🔒
                 .route("/admin", get(admin_handler))
-                .route("/admin/library/:library_id", post(admin_library_handler))
+                .route("/admin/library/{library_id}", post(admin_library_handler))
                 .route("/admin/library/new", post(new_library_handler))
-                .route("/admin/user/:user_id", post(change_user_handler))
+                .route("/admin/user/{user_id}", post(change_user_handler))
                 .route("/admin/user/new", post(new_user_handler))
                 // TODO PROTECT HERE : add a layer (Role::Admin) if possible
                 // 🔒🔒🔒 PROTECTED 🔒🔒🔒
                 .route("/prefs", get(prefs_handler))
                 .route("/library", get(library_handler))
-                .route("/library/*path", get(library_handler))
-                .route("/toggle/:flag/:id", get(flag_handler))
+                .route("/library/{*path}", get(library_handler))
+                .route("/toggle/{flag}/{id}", get(flag_handler))
                 .route("/bookmarks", get(bookmarks_handler))
                 .route("/reading", get(reading_handler))
                 .route("/search", post(search_handler))
-                .route("/download/:file_id", get(download_handler))
-                .route("/read/:file_id/:page", get(reader_handler))
-                .route("/comic_page/:file_id/:page/:size", get(comic_page_handler))
-                .route("/infos/:file_id", get(infos_handler))
-                .route("/cover/:file_id", get(cover_handler))
+                .route("/download/{file_id}", get(download_handler))
+                .route("/read/{file_id}/{page}", get(reader_handler))
+                .route(
+                    "/comic_page/{file_id}/{page}/{size}",
+                    get(comic_page_handler),
+                )
+                .route("/infos/{file_id}", get(infos_handler))
+                .route("/cover/{file_id}", get(cover_handler))
                 // .route_layer(login_required!(Backend, login_url = "/"))
                 // TODO PROTECT HERE : add a layer (Role::User) if possible
                 // 🔥🔥🔥 UNPROTECTED 🔥🔥🔥
                 .route("/", get(get_root))
-                .route("/:path", get(get_root_file))
-                .route("/css/*path", get(get_css))
-                .route("/fonts/*path", get(get_fonts))
+                .route("/{path}", get(get_root_file))
+                .route("/css/{*path}", get(get_css))
+                .route("/fonts/{*path}", get(get_fonts))
                 .with_state(css)
                 .with_state(pool)
-                .route("/images/*path", get(get_images)) // ⚠️  UI images, not covers
+                .route("/images/{*path}", get(get_images)) // ⚠️  UI images, not covers
                 .route("/login", post(login_handler))
                 .route("/logout", get(logout_handler))
                 // .fallback(fallback) // TODO useless ?
