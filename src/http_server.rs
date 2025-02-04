@@ -227,7 +227,7 @@ async fn login_handler(
 
 async fn logout_handler(mut auth_session: AuthSession) -> impl IntoResponse {
     info!("get /logout");
-    match auth_session.logout() {
+    match auth_session.logout().await {
         Ok(_) => {
             debug!("user found, logout");
             Html(html_render::logout())
@@ -614,7 +614,7 @@ async fn new_library_handler(auth_session: AuthSession, path: String) -> impl In
             // only admin
             if user.role == Role::Admin {
                 // retrieve path from body
-                let path = path.split('=').last().unwrap_or("");
+                let path = path.split('=').next_back().unwrap_or("");
                 use std::borrow::Cow;
                 let decoded_path = match decode(path) {
                     Ok(path) => path,
