@@ -393,12 +393,12 @@ pub fn comic_reader(user: &User, file: &FileInfo, page: i32) -> String {
         }
         br;
         br;
-        div(class="navigation-map") {
+        div(class="reader-full-page-image") {
             picture {
                 source(srcset=format!("/comic_page/{}/{}/800px", file.id, page), media="(max-width: 800px)", class="comic-content");
                 source(srcset=format!("/comic_page/{}/{}/1000px", file.id, page), media="(max-width: 1000px)", class="comic-content");
                 source(srcset=format!("/comic_page/{}/{}/orig", file.id, page), class="comic-content");
-                img(src=format!("/comic_page/{}/{}/orig", file.id, page), alt="TODO_PAGE_NUM", class="comic-content", usemap="navigation-map");
+                img(src=format!("/comic_page/{}/{}/orig", file.id, page), alt="TODO_PAGE_NUM", class="comic-content", usemap="reader-full-page-image");
                 // not a html map, because we need percentage coords
                 // thx https://stackoverflow.com/a/26231487
                 a(href="", style="top: 0%; left: 30%; width: 40%; height: 3%;"); // zone for menu
