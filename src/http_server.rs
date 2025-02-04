@@ -10,7 +10,6 @@ use argon2::{
 use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Form;
-use axum::{error_handling::HandleErrorLayer, BoxError};
 use axum::{
     extract::{Path, State},
     routing::{get, post},
@@ -1375,11 +1374,6 @@ async fn create_router() -> Router {
             // This combines the session layer with our backend to establish the auth
             // service which will provide the auth session as a request extension.
             let backend = Backend::new(pool.clone());
-            // let auth_service = ServiceBuilder::new()
-            //     .layer(HandleErrorLayer::<_, Router>::new(|_: BoxError| async {
-            //         StatusCode::BAD_REQUEST
-            //     }))
-            //     .layer(AuthManagerLayerBuilder::new(backend, session_layer).build());
             let auth_service = AuthManagerLayerBuilder::new(backend, session_layer).build();
 
             // custom css handler, will be passed to the css route
