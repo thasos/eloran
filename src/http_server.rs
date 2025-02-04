@@ -1323,11 +1323,11 @@ pub struct Credentials {
 pub struct Backend {
     db: SqlitePool,
 }
-impl Backend {
-    pub fn new(db: SqlitePool) -> Self {
-        Self { db }
-    }
-}
+// impl Backend {
+//     pub fn new(db: SqlitePool) -> Self {
+//         Self { db }
+//     }
+// }
 #[async_trait]
 impl AuthnBackend for Backend {
     type User = User;
@@ -1475,8 +1475,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_favicon() {
-        let router = create_router();
-        let client = TestServer::new(router.await).expect("new TestServer");
+        let router = create_router().await;
+        let client = TestServer::new(router).expect("new TestServer");
         let favicon = client.get("/favicon.ico").await;
         assert_eq!(favicon.status_code(), StatusCode::OK);
         let touchicon = client.get("/apple-touch-icon.png").await;
@@ -1502,7 +1502,7 @@ mod tests {
 
         // root without auth
         let mut client = TestServer::new(router.await).expect("new TestServer");
-        client.do_save_cookies();
+        client.save_cookies();
         client.expect_success();
 
         let res = client.get("/").await;
