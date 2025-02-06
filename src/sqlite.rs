@@ -195,7 +195,7 @@ pub async fn create_library_path(library_path: Vec<String>) {
             name: path
                 .trim_end_matches('/')
                 .split('/')
-                .last()
+                .next_back()
                 .unwrap()
                 .to_string(),
             path: path.to_string(),
@@ -610,7 +610,13 @@ pub async fn set_flag_status(
                 .execute(conn)
                 .await
             {
-                Ok(_) => debug!("flag {} {} added to user {}", flag, file_id, user_id),
+                Ok(_) => {
+                    debug!("flag {} {} setted to user {}", flag, file_id, user_id);
+                    // remove file from reading list if we set read_status to true
+                    if flag_field == "read_by" && flag_status {
+                        remove_file_id_from_reading(file_id, &user_id, conn).await;
+                    }
+                }
                 Err(e) => error!(
                     "failed to add flag {} {} to user {} : {e}",
                     flag, file_id, user_id,
