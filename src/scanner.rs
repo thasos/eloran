@@ -106,6 +106,7 @@ pub enum Format {
     Cbr,
     Cbz,
     Txt,
+    Jpg,
     #[default]
     Other,
 }
@@ -117,6 +118,7 @@ impl Format {
             Format::Cbr => "cbr",
             Format::Cbz => "cbz",
             Format::Txt => "txt",
+            Format::Jpg => "jpg",
             Format::Other => "Not supported",
         }
     }
@@ -124,11 +126,12 @@ impl Format {
 impl fmt::Display for Format {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Format::Epub => write!(f, "epub"),
             Format::Cbr => write!(f, "cbr"),
             Format::Cbz => write!(f, "cbz"),
             Format::Pdf => write!(f, "pdf"),
             Format::Txt => write!(f, "txt"),
-            Format::Epub => write!(f, "epub"),
+            Format::Jpg => write!(f, "jpg"),
             Format::Other => write!(f, "unknow"),
         }
     }
