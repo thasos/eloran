@@ -11,6 +11,7 @@ use serde::Serialize;
 use sqlx::pool::Pool;
 use sqlx::Sqlite;
 use std::cmp::Ordering;
+use std::fmt;
 use std::fs::{self, File};
 use std::io::Cursor;
 use std::os::linux::fs::MetadataExt;
@@ -55,7 +56,7 @@ pub struct FileInfo {
     // see https://www.sqlite.org/datatype3.html
     pub scan_me: i8,
     pub added_date: i64,
-    pub format: String,
+    pub format: Format,
     // pub format: Format,
     // TODO make an Option<i64> if we want to print "unknow" in UI
     // i64 because no u64 with sqlite...
@@ -75,7 +76,7 @@ impl FileInfo {
             parent_path: "".to_string(),
             added_date: 0,
             scan_me: 1,
-            format: "".to_string(),
+            format: Format::Other,
             // format: Format::Other,
             size: 0,
             total_pages: 0,
@@ -96,30 +97,42 @@ impl Ord for FileInfo {
 }
 
 // sqlx::FromRow not compatible with enums, need an alternative
-// #[derive(Debug, Default, Clone, PartialEq)]
-// /// Format supported
-// pub enum Format {
-//     Epub,
-//     Pdf,
-//     Cbr,
-//     Cbz,
-//     Txt,
-//     #[default]
-//     Other,
-// }
-// impl Format {
-//     pub fn as_str(&self) -> &str {
-//         match &self {
-//             Format::Epub => "epub",
-//             Format::Pdf => "pdf",
-//             Format::Cbr => "cbr",
-//             Format::Cbz => "cbz",
-//             Format::Txt => "txt",
-//             Format::Other => "Not supported",
-//             _ => "other",
-//         }
-//     }
-// }
+#[derive(Debug, Default, Clone, sqlx::Type, PartialEq, Eq, Serialize)]
+#[sqlx(type_name = "format", rename_all = "lowercase")]
+/// Supported formats
+pub enum Format {
+    Epub,
+    Pdf,
+    Cbr,
+    Cbz,
+    Txt,
+    #[default]
+    Other,
+}
+impl Format {
+    pub fn as_str(&self) -> &str {
+        match &self {
+            Format::Epub => "epub",
+            Format::Pdf => "pdf",
+            Format::Cbr => "cbr",
+            Format::Cbz => "cbz",
+            Format::Txt => "txt",
+            Format::Other => "Not supported",
+        }
+    }
+}
+impl fmt::Display for Format {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Format::Cbr => write!(f, "cbr"),
+            Format::Cbz => write!(f, "cbz"),
+            Format::Pdf => write!(f, "pdf"),
+            Format::Txt => write!(f, "txt"),
+            Format::Epub => write!(f, "epub"),
+            Format::Other => write!(f, "unknow"),
+        }
+    }
+}
 
 /// Directory struct, match database fields
 /// id|name|parent_path
@@ -169,12 +182,16 @@ fn extract_file_infos(library_name: &str, entry: &Path) -> FileInfo {
     };
     // file type
     let format: Vec<&str> = filename.rsplit('.').collect();
-    let format = format[0].to_string();
+    // let format = format[0];
     // TODO enum for file type (and "not supported" if fot in members)
-    // let format = match format[0] {
-    //     "epub" => Format::Epub,
-    //     _ => Format::Other,
-    // };
+    let format = match format[0].to_lowercase().as_str() {
+        "epub" => Format::Epub,
+        "cbr" => Format::Cbr,
+        "cbz" => Format::Cbz,
+        "pdf" => Format::Pdf,
+        "txt" => Format::Txt,
+        _ => Format::Other,
+    };
 
     // construct
     FileInfo {
