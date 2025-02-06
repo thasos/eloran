@@ -12,18 +12,12 @@ readme = "README.md"
 publish = true
 
 [dependencies]
-# Updating idna v0.5.0 -> v1.0.3
-# idna = "0.5.0"
 axum = { version = "0.8.1", features = ["macros", "http2"] }
 axum-login = "0.17.0"
 # need tower for redirect when not logged in
 tower = { version = "0.5.2", features = ["util"] }
 tokio = { version = "1.43.0", features = ["full"] }
-# TODO upgrade axum-login when PR#91 will be merged (0.7 ?)
-# see https://github.com/maxcountryman/axum-login/pull/91
-# axum-login = { git = "https://github.com/maxcountryman/axum-login", rev = "bb7e5d32100bb6846412cee1f26851cc47397991", features = ["sqlite"] }
-horrorshow = "0.8.4" # alt : https://github.com/lambda-fairy/maud ?
-# body = "0.1.1"
+horrorshow = "0.8.4" # TODO test alternative : https://github.com/lambda-fairy/maud ?
 env_logger = "0.11.6"
 log = "0.4.17"
 ulid = "1.0.0"
@@ -47,7 +41,6 @@ argon2 = "0.5.2"
 password-auth = "1.0.0"
 async-trait = "0.1.74"
 time = { version = "0.3.30", features = ["formatting"] }
-# async-sqlx-session = { version = "0.4.0", features = ["sqlite"] }
 
 [dev-dependencies]
 axum-test = "17.2.0"
