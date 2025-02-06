@@ -587,11 +587,21 @@ pub async fn scan_routine(sleep_time: Duration) {
     }
 }
 
-pub fn dynamic_image_to_vec_u8(image: DynamicImage) -> Vec<u8> {
-    let mut buf = Cursor::new(vec![]);
-    image.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
-    let vec_u8_image = buf.get_ref();
-    vec_u8_image.to_owned()
+pub fn dynamic_image_to_vec_u8(image: DynamicImage) -> Option<Vec<u8>> {
+    let mut bytes_comic_page: Vec<u8> = Vec::new();
+    let mut writer = Cursor::new(&mut bytes_comic_page);
+    let jpeg_encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 75);
+    // Jpeg does not support the color type `Rgba8`
+    match image.into_rgb8().write_with_encoder(jpeg_encoder) {
+        Ok(_) => {
+            let vec_u8_image: &Vec<u8> = writer.get_ref();
+            Some(vec_u8_image.to_owned())
+        }
+        Err(e) => {
+            warn!("unable to convert cover to jpeg : {e}");
+            None
+        }
+    }
 }
 
 pub async fn extract_all(file: &FileInfo, conn: &Pool<Sqlite>) {
@@ -604,8 +614,13 @@ pub async fn extract_all(file: &FileInfo, conn: &Pool<Sqlite>) {
     };
 
     if let Some(cover) = dynamic_image_cover {
-        let buffered_u8_cover = dynamic_image_to_vec_u8(cover);
-        sqlite::insert_cover(file, &buffered_u8_cover, conn).await
+        match dynamic_image_to_vec_u8(cover) {
+            Some(buffered_u8_cover) => sqlite::insert_cover(file, &buffered_u8_cover, conn).await,
+            None => warn!(
+                "unable to insert cover for file {},{}",
+                file.parent_path, file.name
+            ),
+        }
     }
     // total_pages
     match file.format.as_str() {
