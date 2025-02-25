@@ -1,5 +1,5 @@
 use crate::http_server::{Role, User};
-use crate::scanner::{DirectoryInfo, FileInfo, Library};
+use crate::scanner::{DirectoryInfo, FileInfo, Format, Library};
 
 use horrorshow::{helper::doctype, Raw, Template};
 use time::format_description;
@@ -291,7 +291,7 @@ pub fn file_info(
                 h2 {
                     a(href= up_link , class="navigation") : "↖️  up";
                     : " | " ;
-                    @ if file.format != "pdf" {
+                    @ if file.format != Format::Pdf {
                         a(href=format!("/read/{}/{}", file.id, current_page), class="navigation") : "📖 read file";
                         : " | " ;
                     }
@@ -303,7 +303,7 @@ pub fn file_info(
                 }
                 br;
                 br;
-                @ if file.format != "pdf" {
+                @ if file.format != Format::Pdf {
                     a(href=format!("/read/{}/{}", file.id, current_page), class="navigation") {
                         img(src=format!("/cover/{}", file.id), alt="cover", class="infos");
                     }

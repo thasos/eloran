@@ -8,7 +8,7 @@ library_name: library
 parent_path: library_new_file/Asterix
 scan_me: 1
 added_date: "[added_date]"
-format: pdf
+format: Pdf
 size: 10
 total_pages: 0
 read_by: ""
