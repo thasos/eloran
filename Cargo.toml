@@ -30,7 +30,7 @@ compress-tools = "0.15.1"
 # see https://github.com/OSSystems/compress-tools-rs/issues/123
 # compress-tools = { git = " https://github.com/OSSystems/compress-tools-rs", rev = "e2af8dafce216f5bf598a34fc7fc73d47e1a2d55" }
 libc = "0.2.170"
-config = "0.15.8"
+config = "0.15.11"
 poppler-rs = "0.24.1"
 cairo-rs = { version = "0.20.7", features = ["png", "pdf"] }
 rand = "0.9.0"
@@ -39,7 +39,7 @@ serde = "1.0.164"
 sqlx = { version = "0.8.3", default-features = false, features = ["runtime-tokio", "tls-rustls", "sqlite", "macros", "migrate"] }
 argon2 = "0.5.2"
 password-auth = "1.0.0"
-async-trait = "0.1.74"
+async-trait = "0.1.88"
 time = { version = "0.3.30", features = ["formatting"] }
 
 [dev-dependencies]
