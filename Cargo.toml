@@ -12,7 +12,7 @@ readme = "README.md"
 publish = true
 
 [dependencies]
-axum = { version = "0.8.1", features = ["macros", "http2"] }
+axum = { version = "0.8.4", features = ["macros", "http2"] }
 axum-login = "0.17.0"
 # need tower for redirect when not logged in
 tower = { version = "0.5.2", features = ["util"] }
@@ -43,7 +43,7 @@ async-trait = "0.1.88"
 time = { version = "0.3.41", features = ["formatting"] }
 
 [dev-dependencies]
-axum-test = "17.2.0"
+axum-test = "17.3.0"
 insta = { version = "1.34.0", features = ["yaml", "redactions"] }
 
 [profile.release]
