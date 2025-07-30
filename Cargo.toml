@@ -13,7 +13,7 @@ publish = true
 
 [dependencies]
 axum = { version = "0.8.4", features = ["macros", "http2"] }
-axum-login = "0.17.0"
+axum-login = "0.18.0"
 # need tower for redirect when not logged in
 tower = { version = "0.5.2", features = ["util"] }
 tokio = { version = "1.43.0", features = ["full"] }
