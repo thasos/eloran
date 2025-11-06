@@ -29,7 +29,7 @@ compress-tools = "0.15.1"
 # `unsafe precondition(s) violated: slice::from_raw_parts requires the pointer to be aligned and non-null, and the total size of the slice not to exceed `isize::MAX``
 # see https://github.com/OSSystems/compress-tools-rs/issues/123
 # compress-tools = { git = " https://github.com/OSSystems/compress-tools-rs", rev = "e2af8dafce216f5bf598a34fc7fc73d47e1a2d55" }
-libc = "0.2.174"
+libc = "0.2.177"
 config = "0.15.11"
 poppler-rs = "0.24.1"
 cairo-rs = { version = "0.20.12", features = ["png", "pdf"] }
