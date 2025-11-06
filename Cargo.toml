@@ -33,7 +33,7 @@ libc = "0.2.177"
 config = "0.15.11"
 poppler-rs = "0.24.1"
 cairo-rs = { version = "0.20.12", features = ["png", "pdf"] }
-rand = "0.9.1"
+rand = "0.9.2"
 urlencoding = "2.1.2"
 serde = "1.0.164"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls", "sqlite", "macros", "migrate"] }
