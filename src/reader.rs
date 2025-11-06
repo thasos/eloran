@@ -79,15 +79,15 @@ pub async fn epub(file: &FileInfo, page: i32) -> String {
         Err(_) => EpubDoc::new("toto").unwrap(),
     };
     // set page at current_page
-    doc.set_current_page(page as usize);
+    doc.set_current_chapter(page as usize);
     // title
     let title = if let Some(title) = doc.mdata("title") {
-        title
+        title.value.clone()
     } else {
         "Book title not found".to_string()
     };
     // pages
-    let total_pages = doc.get_num_pages();
+    let total_pages = doc.get_num_chapters();
     // resources
     let id = match doc.get_current_id() {
         Some(id) => id,
@@ -105,7 +105,7 @@ pub async fn epub(file: &FileInfo, page: i32) -> String {
         page, total_pages, file.parent_path, file.name, title,
     );
     for _ in 0..total_pages {
-        let current_page = doc.get_current_page();
+        let current_page = doc.get_current_chapter();
         // let (page_content, _) = doc.get_current_str().unwrap();
         let page_content = match doc.get_current_with_epub_uris() {
             Ok(content) => String::from_utf8(content).expect("pas utf8"),

@@ -1,9 +1,9 @@
 use crate::http_server::{Role, User};
 use crate::scanner::{DirectoryInfo, FileInfo, Format, Library};
 
-use horrorshow::{helper::doctype, Raw, Template};
-use time::format_description;
+use horrorshow::{Raw, Template, helper::doctype};
 use time::OffsetDateTime;
+use time::format_description;
 
 fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 'a> {
     box_html! {

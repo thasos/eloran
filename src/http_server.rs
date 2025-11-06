@@ -4,25 +4,24 @@ use crate::scanner::{self, DirectoryInfo, FileInfo, Library};
 use crate::sqlite;
 
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
+    password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
-use axum::http::{header, StatusCode};
-use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Form;
+use axum::http::{StatusCode, header};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::{
+    Router,
     extract::{Path, State},
     routing::{get, post},
-    Router,
 };
 use axum_login::{
-    login_required,
+    AuthManagerLayerBuilder, login_required,
     tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
-    AuthManagerLayerBuilder,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::pool::Pool;
 use sqlx::Sqlite;
+use sqlx::pool::Pool;
 use std::{collections::VecDeque, fs, process};
 use time::Duration;
 use tower::ServiceBuilder;
@@ -1237,10 +1236,11 @@ impl AuthUser for User {
         self.id
     }
     fn session_auth_hash(&self) -> &[u8] {
-        self.password_hash.as_bytes() // We use the password hash as the auth
-                                      // hash--what this means
-                                      // is when the user changes their password the
-                                      // auth session becomes invalid.
+        // We use the password hash as the auth
+        // hash--what this means
+        // is when the user changes their password the
+        // auth session becomes invalid.
+        self.password_hash.as_bytes()
     }
 }
 // Serialize is for testing with axum-test
@@ -1273,11 +1273,12 @@ impl AuthnBackend for Backend {
             .fetch_optional(&self.db)
             .await?;
         Ok(user.filter(|user| {
+            // We're using password-based authentication--this
+            // works by comparing our form input with an argon2
+            // password hash.
             verify_password(creds.password, &user.password_hash)
                 .ok()
-                .is_some() // We're using password-based authentication--this
-                           // works by comparing our form input with an argon2
-                           // password hash.
+                .is_some()
         }))
     }
     async fn get_user(&self, user_id: &UserId<Self>) -> Result<Option<Self::User>, Self::Error> {
@@ -1397,7 +1398,7 @@ pub async fn start_http_server(bind: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     use axum_test::TestServer;
-    use sqlx::{migrate::MigrateDatabase, Sqlite};
+    use sqlx::{Sqlite, migrate::MigrateDatabase};
 
     #[tokio::test]
     async fn test_favicon() {

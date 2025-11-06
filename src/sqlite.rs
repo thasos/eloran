@@ -2,8 +2,8 @@ use crate::http_server::User;
 use crate::scanner::{DirectoryInfo, FileInfo, Library};
 
 use sqlx::sqlite::SqlitePoolOptions;
-use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
-use sqlx::{pool::Pool, Row};
+use sqlx::{Row, pool::Pool};
+use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase};
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -746,7 +746,9 @@ pub async fn get_last_successfull_scan_date(library_id: i64, conn: &Pool<Sqlite>
             epoch_date
         }
         Err(_) => {
-            warn!("could not found last successfull scan date, I will perform a full scan, be patient");
+            warn!(
+                "could not found last successfull scan date, I will perform a full scan, be patient"
+            );
             0
         }
     };

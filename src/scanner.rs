@@ -3,13 +3,13 @@ use crate::sqlite;
 use cairo::Context;
 use compress_tools::*;
 use epub::doc::EpubDoc;
-use image::imageops::FilterType;
 use image::DynamicImage;
+use image::imageops::FilterType;
 use jwalk::WalkDirGeneric;
 use poppler::Document;
 use serde::Serialize;
-use sqlx::pool::Pool;
 use sqlx::Sqlite;
+use sqlx::pool::Pool;
 use std::cmp::Ordering;
 use std::fmt;
 use std::fs::{self, File};
@@ -698,7 +698,7 @@ pub fn extract_pdf_cover(file: &FileInfo) -> Option<image::DynamicImage> {
 pub async fn extract_epub_page_number(file: &FileInfo, conn: &Pool<Sqlite>) {
     let full_path = format!("{}/{}", file.parent_path, file.name);
     if let Ok(doc) = EpubDoc::new(&full_path) {
-        let total_pages = doc.get_num_pages();
+        let total_pages = doc.get_num_chapters();
         sqlite::insert_total_pages(file, total_pages as i32, conn).await;
     };
 }
