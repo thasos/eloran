@@ -31,7 +31,7 @@ compress-tools = "0.15.1"
 # compress-tools = { git = " https://github.com/OSSystems/compress-tools-rs", rev = "e2af8dafce216f5bf598a34fc7fc73d47e1a2d55" }
 libc = "0.2.177"
 config = "0.15.18"
-poppler-rs = "0.24.1"
+poppler-rs = "0.25.0"
 cairo-rs = { version = "0.20.12", features = ["png", "pdf"] }
 rand = "0.9.2"
 urlencoding = "2.1.2"
