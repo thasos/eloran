@@ -1,7 +1,7 @@
 # hadolint global ignore=DL3059
 # builder
 # need almost 4.5 GB and 5 minutes on a i7-8700K
-FROM docker.io/rust:1.88-alpine3.22 AS builder
+FROM docker.io/rust:1.91-alpine3.22 AS builder
 
 # dependencies
 RUN apk --no-cache add just upx musl-dev \
