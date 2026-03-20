@@ -29,7 +29,7 @@ RUN just build_musl
 RUN upx target/x86_64-unknown-linux-musl/release/eloran
 
 # runner
-FROM docker.io/alpine:3.22
+FROM docker.io/alpine:3.23
 
 LABEL "org.opencontainers.image.base.name" = "ghcr.io/thasos/eloran" \
       "org.opencontainers.image.created" = "2024-12-20T17:45:05Z" \
