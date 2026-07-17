@@ -4,24 +4,25 @@ use crate::scanner::{self, DirectoryInfo, FileInfo, Library};
 use crate::sqlite;
 
 use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
-    password_hash::{PasswordHasher, SaltString, rand_core::OsRng},
 };
-use axum::Form;
-use axum::http::{StatusCode, header};
+use axum::http::{header, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
+use axum::Form;
 use axum::{
-    Router,
     extract::{Path, State},
     routing::{get, post},
+    Router,
 };
 use axum_login::{
-    AuthManagerLayerBuilder, login_required,
+    login_required,
     tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
+    AuthManagerLayerBuilder,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::Sqlite;
 use sqlx::pool::Pool;
+use sqlx::Sqlite;
 use std::{collections::VecDeque, fs, process};
 use time::Duration;
 use tower::ServiceBuilder;
@@ -1398,7 +1399,7 @@ pub async fn start_http_server(bind: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     use axum_test::TestServer;
-    use sqlx::{Sqlite, migrate::MigrateDatabase};
+    use sqlx::{migrate::MigrateDatabase, Sqlite};
 
     #[tokio::test]
     async fn test_favicon() {

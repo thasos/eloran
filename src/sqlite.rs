@@ -2,8 +2,8 @@ use crate::http_server::User;
 use crate::scanner::{DirectoryInfo, FileInfo, Library};
 
 use sqlx::sqlite::SqlitePoolOptions;
-use sqlx::{Row, pool::Pool};
-use sqlx::{Sqlite, SqlitePool, migrate::MigrateDatabase};
+use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+use sqlx::{pool::Pool, Row};
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -730,28 +730,27 @@ pub async fn get_files_from_directory(
 
 /// get last successfull scan date in EPOCH format from database
 pub async fn get_last_successfull_scan_date(library_id: i64, conn: &Pool<Sqlite>) -> Duration {
-    let last_successfull_scan_date: i64 = match sqlx::query(
-        "SELECT last_successfull_scan_date FROM libraries WHERE id = ?",
-    )
-    .bind(library_id)
-    .fetch_one(conn)
-    .await
-    {
-        Ok(epoch_date_row) => {
-            let epoch_date: i64 = epoch_date_row
-                .try_get("last_successfull_scan_date")
-                .unwrap();
-            // TODO pretty display of epoch time
-            info!("last successfull scan date : {}", &epoch_date);
-            epoch_date
-        }
-        Err(_) => {
-            warn!(
+    let last_successfull_scan_date: i64 =
+        match sqlx::query("SELECT last_successfull_scan_date FROM libraries WHERE id = ?")
+            .bind(library_id)
+            .fetch_one(conn)
+            .await
+        {
+            Ok(epoch_date_row) => {
+                let epoch_date: i64 = epoch_date_row
+                    .try_get("last_successfull_scan_date")
+                    .unwrap();
+                // TODO pretty display of epoch time
+                info!("last successfull scan date : {}", &epoch_date);
+                epoch_date
+            }
+            Err(_) => {
+                warn!(
                 "could not found last successfull scan date, I will perform a full scan, be patient"
             );
-            0
-        }
-    };
+                0
+            }
+        };
     Duration::from_secs(u64::try_from(last_successfull_scan_date).unwrap())
 }
 
