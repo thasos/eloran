@@ -1,9 +1,9 @@
 use crate::http_server::{Role, User};
 use crate::scanner::{DirectoryInfo, FileInfo, Format, Library};
 
-use horrorshow::{Raw, Template, helper::doctype};
-use time::OffsetDateTime;
+use horrorshow::{helper::doctype, Raw, Template};
 use time::format_description;
+use time::OffsetDateTime;
 
 fn header<'a>(redirect_url: Option<&'a str>) -> Box<dyn horrorshow::RenderBox + 'a> {
     box_html! {
@@ -189,7 +189,7 @@ pub fn login_form() -> String {
 pub fn logout() -> String {
     let body_content = box_html! { p
         // { : format!("Bye {}", user.name.as_str()) }
-        { : format!("Bye !") }
+        { : "Bye !" }
         p { a(href="/") : "return home" }
     };
 
@@ -250,7 +250,7 @@ pub fn file_info(
             }
             section(class="filters") {
                 ul(class="breadcrumb") {
-                    li { a(href=format!("/library"), class="navigation") : "Library" }
+                    li { a(href="/library", class="navigation") : "Library" }
                     div(class="border-arrow") { div(class="arrow") {} }
                         // first, split only last element
                         @ if let Some(rsplitted_current_path) = file_library_path.rsplit_once('/') {
@@ -500,7 +500,7 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
             section(class="filters") {
                 // TODO do not print this in case on search
                 ul(class="breadcrumb") {
-                    li { a(href=format!("/library"), class="navigation") : "Library" }
+                    li { a(href="/library", class="navigation") : "Library" }
                     @ if let Some(current_path) = &list_to_display.current_path {
                         // first, split only last element
                         @ if let Some(rsplitted_current_path) = current_path.rsplit_once('/') {
@@ -559,9 +559,9 @@ pub fn library_display(list_to_display: LibraryDisplay) -> String {
                         a(href= {
                             // avoid double '/', I'm not proud of this...
                             if directory.parent_path.is_empty() {
-                                format!("/library/{}", &directory.name)
+                                format!("/library/{}", directory.name)
                             } else {
-                                format!("/library{}/{}", list_to_display.current_path.clone().unwrap_or("".to_string()), &directory.name)
+                                format!("/library{}/{}", list_to_display.current_path.clone().unwrap_or("".to_string()), directory.name)
                             }
                         }) {
                             div(class="cover") {
@@ -687,31 +687,31 @@ mod tests {
         let redirect_url = "tests";
         // TODO WTF ?
         let rendered_headers = render(header(Some(&redirect_url)), Some(&redirect_url));
-        insta::assert_yaml_snapshot!(rendered_headers)
+        insta::assert_yaml_snapshot!(rendered_headers);
     }
     #[test]
     fn test_simple_message() {
-        insta::assert_yaml_snapshot!(simple_message("simple", Some("test")))
+        insta::assert_yaml_snapshot!(simple_message("simple", Some("test")));
     }
     #[test]
     fn test_prefs() {
         let user = User::default();
-        insta::assert_yaml_snapshot!(prefs(&user))
+        insta::assert_yaml_snapshot!(prefs(&user));
     }
     #[test]
     fn test_admin() {
         let user = User::default();
         let library_list = Vec::with_capacity(0);
         let user_list = Vec::with_capacity(0);
-        insta::assert_yaml_snapshot!(admin(&user, library_list, user_list))
+        insta::assert_yaml_snapshot!(admin(&user, library_list, user_list));
     }
     #[test]
     fn test_login_form() {
-        insta::assert_yaml_snapshot!(login_form())
+        insta::assert_yaml_snapshot!(login_form());
     }
     #[test]
     fn test_logout() {
-        insta::assert_yaml_snapshot!(logout())
+        insta::assert_yaml_snapshot!(logout());
     }
     #[test]
     fn test_file_info() {
@@ -728,7 +728,7 @@ mod tests {
             bookmark_status,
             read_status,
             up_link
-        ))
+        ));
     }
     #[test]
     fn test_flag_toggle() {
@@ -736,14 +736,14 @@ mod tests {
         let flag_status = true;
         let file_id = "blabla";
         let flag = "read_status";
-        insta::assert_yaml_snapshot!(flag_toggle(&user, flag_status, file_id, flag))
+        insta::assert_yaml_snapshot!(flag_toggle(&user, flag_status, file_id, flag));
     }
     #[test]
     fn test_comic_reader() {
         let user = User::default();
         let file = FileInfo::default();
         let page: i32 = 10;
-        insta::assert_yaml_snapshot!(comic_reader(&user, &file, page))
+        insta::assert_yaml_snapshot!(comic_reader(&user, &file, page));
     }
     #[test]
     fn test_ebook_reader() {
@@ -751,7 +751,7 @@ mod tests {
         let file = FileInfo::default();
         let epub_content = "Lorem ipsum dolor sit amet";
         let page: i32 = 10;
-        insta::assert_yaml_snapshot!(ebook_reader(&user, &file, epub_content, page))
+        insta::assert_yaml_snapshot!(ebook_reader(&user, &file, epub_content, page));
     }
     #[test]
     fn test_library() {
@@ -764,7 +764,7 @@ mod tests {
             current_path: None,
             search_query: None,
         };
-        insta::assert_yaml_snapshot!(library_display(list_to_display))
+        insta::assert_yaml_snapshot!(library_display(list_to_display));
     }
     #[test]
     fn test_menu() {
@@ -773,6 +773,6 @@ mod tests {
         let redirect_url = "tests";
         let menu = menu(Some(user));
         let rendered_menu = render(menu, Some(redirect_url));
-        insta::assert_yaml_snapshot!(rendered_menu)
+        insta::assert_yaml_snapshot!(rendered_menu);
     }
 }
