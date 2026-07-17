@@ -198,6 +198,8 @@ pub fn logout() -> String {
 }
 
 fn timestamp_to_pretty_date(timestamp: i64) -> Option<String> {
+    // TODO : use of deprecated function `time::format_description::parse`: use `parse_borrowed`
+    // with the appropriate version for clarity
     let pretty_date_format = format_description::parse("[year]-[month]-[day]").ok()?;
     let added_date = OffsetDateTime::from_unix_timestamp(timestamp).ok()?;
     let pretty_added_date = added_date.format(&pretty_date_format).ok()?;
