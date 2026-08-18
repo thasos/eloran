@@ -8,8 +8,6 @@ mod sqlite;
 
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate horrorshow;
 use std::{env, time::Duration};
 
 use crate::conf::init_conf;

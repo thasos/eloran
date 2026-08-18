@@ -1,7 +1,7 @@
 use crate::http_server::{Role, User};
 use crate::scanner::{DirectoryInfo, FileInfo, Format, Library};
 
-use horrorshow::{helper::doctype, Raw, Template};
+use horrorshow::{box_html, helper::doctype, html, Raw, Template};
 use time::format_description;
 use time::OffsetDateTime;
 
