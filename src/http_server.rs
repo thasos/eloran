@@ -48,16 +48,10 @@ pub enum Role {
 }
 
 fn error_handler() -> Html<String> {
-    Html(html_render::simple_message(
-        "server error, please see logs",
-        None,
-    ))
+    Html(html_render::simple_message("server error, please see logs", None))
 }
 
-async fn reading_handler(
-    auth_session: AuthSession,
-    State(conn): State<Pool<Sqlite>>,
-) -> impl IntoResponse {
+async fn reading_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
             info!("get /reading : {}", &user.name);
@@ -67,13 +61,10 @@ async fn reading_handler(
             // add status (read, bookmark)
             let user = sqlite::get_user(Some(&user.name), None, &conn).await;
             let user = user.first().unwrap();
-            let mut files_results_with_status: Vec<(FileInfo, bool, bool)> =
-                Vec::with_capacity(files_results.capacity());
+            let mut files_results_with_status: Vec<(FileInfo, bool, bool)> = Vec::with_capacity(files_results.capacity());
             for file in files_results {
-                let bookmark_status =
-                    sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
-                let read_status =
-                    sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
+                let bookmark_status = sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
+                let read_status = sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
                 files_results_with_status.push((file, bookmark_status, read_status));
             }
             // lib path
@@ -100,10 +91,7 @@ async fn reading_handler(
     }
 }
 
-async fn bookmarks_handler(
-    auth_session: AuthSession,
-    State(conn): State<Pool<Sqlite>>,
-) -> impl IntoResponse {
+async fn bookmarks_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
             info!("get /bookmarks : {}", &user.name);
@@ -113,13 +101,10 @@ async fn bookmarks_handler(
             // add status (read, bookmark)
             let user = sqlite::get_user(Some(&user.name), None, &conn).await;
             let user = user.first().unwrap();
-            let mut files_results_with_status: Vec<(FileInfo, bool, bool)> =
-                Vec::with_capacity(files_results.capacity());
+            let mut files_results_with_status: Vec<(FileInfo, bool, bool)> = Vec::with_capacity(files_results.capacity());
             for file in files_results {
-                let bookmark_status =
-                    sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
-                let read_status =
-                    sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
+                let bookmark_status = sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
+                let read_status = sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
                 files_results_with_status.push((file, bookmark_status, read_status));
             }
             // lib path
@@ -146,11 +131,7 @@ async fn bookmarks_handler(
 }
 
 // TODO use struct, like new_user_handler()
-async fn search_handler(
-    auth_session: AuthSession,
-    State(conn): State<Pool<Sqlite>>,
-    query: String,
-) -> impl IntoResponse {
+async fn search_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>, query: String) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
             info!("get /search : {}", &query);
@@ -163,13 +144,10 @@ async fn search_handler(
             // add status (read, bookmark)
             let user = sqlite::get_user(Some(&user.name), None, &conn).await;
             let user = user.first().unwrap();
-            let mut files_results_with_status: Vec<(FileInfo, bool, bool)> =
-                Vec::with_capacity(files_results.capacity());
+            let mut files_results_with_status: Vec<(FileInfo, bool, bool)> = Vec::with_capacity(files_results.capacity());
             for file in files_results {
-                let bookmark_status =
-                    sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
-                let read_status =
-                    sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
+                let bookmark_status = sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
+                let read_status = sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
                 files_results_with_status.push((file, bookmark_status, read_status));
             }
             // search dirs
@@ -194,10 +172,7 @@ async fn search_handler(
     }
 }
 
-async fn login_handler(
-    mut auth_session: AuthSession,
-    Form(creds): Form<Credentials>,
-) -> impl IntoResponse {
+async fn login_handler(mut auth_session: AuthSession, Form(creds): Form<Credentials>) -> impl IntoResponse {
     info!("get /login");
     let user = match auth_session.authenticate(creds.clone()).await {
         Ok(Some(user)) => user,
@@ -230,11 +205,7 @@ async fn logout_handler(mut auth_session: AuthSession) -> impl IntoResponse {
 
 // #[axum::debug_handler]
 // TODO link "previous page" or folder of publication
-async fn infos_handler(
-    auth_session: AuthSession,
-    State(conn): State<Pool<Sqlite>>,
-    Path(file_id): Path<String>,
-) -> impl IntoResponse {
+async fn infos_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>, Path(file_id): Path<String>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
             // if the file is not found in database, create new
@@ -251,9 +222,7 @@ async fn infos_handler(
                 Library::new()
             };
             let library_path = &library.path;
-            let up_link = file
-                .parent_path
-                .replace(library_path, &format!("/library/{library_name}"));
+            let up_link = file.parent_path.replace(library_path, &format!("/library/{library_name}"));
             // scan file if needed
             if file.scan_me == 1 {
                 scanner::extract_all(&file, &conn).await;
@@ -261,13 +230,10 @@ async fn infos_handler(
             // we need user_id for bookmark and read status
             let user = sqlite::get_user(Some(&user.name), None, &conn).await;
             let user = user.first().unwrap();
-            let bookmark_status =
-                sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
-            let read_status =
-                sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
+            let bookmark_status = sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
+            let read_status = sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
 
-            let current_page =
-                sqlite::get_current_page_from_file_id(user.id, &file.id, &conn).await;
+            let current_page = sqlite::get_current_page_from_file_id(user.id, &file.id, &conn).await;
 
             Html(html_render::file_info(
                 user,
@@ -299,11 +265,7 @@ async fn flag_handler(
     }
 }
 
-async fn cover_handler(
-    auth_session: AuthSession,
-    State(conn): State<Pool<Sqlite>>,
-    Path(file_id): Path<String>,
-) -> impl IntoResponse {
+async fn cover_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>, Path(file_id): Path<String>) -> impl IntoResponse {
     match auth_session.user {
         Some(_user) => {
             let file = match sqlite::get_files_from_file_id(&file_id, &conn).await {
@@ -343,10 +305,7 @@ async fn cover_handler(
                             if !cover.is_empty() {
                                 (
                                     StatusCode::OK,
-                                    [
-                                        (header::CONTENT_TYPE, "image/jpeg"),
-                                        (header::CACHE_CONTROL, "no-cache"),
-                                    ],
+                                    [(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "no-cache")],
                                     cover,
                                 )
                                     .into_response()
@@ -367,11 +326,7 @@ async fn cover_handler(
     }
 }
 
-async fn download_handler(
-    auth_session: AuthSession,
-    State(conn): State<Pool<Sqlite>>,
-    Path(file_id): Path<String>,
-) -> impl IntoResponse {
+async fn download_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>, Path(file_id): Path<String>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
             info!("get /download/{} : {}", &file_id, &user.name);
@@ -391,14 +346,8 @@ async fn download_handler(
             if let Ok(file_content) = fs::read(full_path) {
                 (
                     StatusCode::OK,
-                    [
-                        (header::CONTENT_TYPE, content_type),
-                        (header::CACHE_CONTROL, "no-cache"),
-                    ],
-                    [(
-                        header::CONTENT_DISPOSITION,
-                        format!("attachment; filename=\"{}\"", &file.name),
-                    )],
+                    [(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, "no-cache")],
+                    [(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", &file.name))],
                     file_content,
                 )
                     .into_response()
@@ -426,10 +375,7 @@ async fn comic_page_handler(
             match reader::get_comic_page(&file, page, &size).await {
                 Some(comic_board) => (
                     StatusCode::OK,
-                    [
-                        (header::CONTENT_TYPE, "image/jpeg"),
-                        (header::CACHE_CONTROL, "no-cache"),
-                    ],
+                    [(header::CONTENT_TYPE, "image/jpeg"), (header::CACHE_CONTROL, "no-cache")],
                     comic_board,
                 )
                     .into_response(),
@@ -463,11 +409,7 @@ async fn reader_handler(
                 scanner::extract_all(&file, &conn).await;
             }
             // don't go outside the files
-            let page = if page > file.total_pages - 1 {
-                file.total_pages - 1
-            } else {
-                page
-            };
+            let page = if page > file.total_pages - 1 { file.total_pages - 1 } else { page };
             // set page at current_page
             sqlite::set_current_page_for_file_id(&file.id, &user.id, &page, &conn).await;
             // remove from reading table if last page
@@ -482,26 +424,19 @@ async fn reader_handler(
             let response = match file.format.as_str() {
                 "epub" => {
                     let epub_reader = reader::epub(&file, page).await;
-                    Html(html_render::ebook_reader(&user, &file, &epub_reader, page))
-                        .into_response()
+                    Html(html_render::ebook_reader(&user, &file, &epub_reader, page)).into_response()
                 }
                 "pdf" => {
                     let pdf_file = fs::read(format!("{}/{}", &file.parent_path, &file.name));
                     match pdf_file {
                         Ok(pdf_file) => (
                             StatusCode::OK,
-                            [
-                                (header::CONTENT_TYPE, "application/pdf"),
-                                (header::CACHE_CONTROL, "no-cache"),
-                            ],
+                            [(header::CONTENT_TYPE, "application/pdf"), (header::CACHE_CONTROL, "no-cache")],
                             pdf_file,
                         )
                             .into_response(),
                         Err(e) => {
-                            warn!(
-                                "pdf file {}/{} not found : {e}",
-                                &file.parent_path, &file.name
-                            );
+                            warn!("pdf file {}/{} not found : {e}", &file.parent_path, &file.name);
                             // TODO true 404
                             (StatusCode::NOT_FOUND, "file not found").into_response()
                         }
@@ -525,10 +460,7 @@ async fn reader_handler(
     }
 }
 
-async fn admin_handler(
-    auth_session: AuthSession,
-    State(conn): State<Pool<Sqlite>>,
-) -> impl IntoResponse {
+async fn admin_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
             info!("get /admin : {}", &user.name);
@@ -583,10 +515,7 @@ async fn new_library_handler(auth_session: AuthSession, path: String) -> impl In
                 // return confirmation message
                 // TODO render
                 Html(html_render::simple_message(
-                    &format!(
-                        "new library added, path :  {}<br /><a href=\"/admin\">return</a>",
-                        decoded_path
-                    ),
+                    &format!("new library added, path :  {}<br /><a href=\"/admin\">return</a>", decoded_path),
                     Some("/admin"),
                 ))
                 .into_response()
@@ -619,11 +548,7 @@ struct FormUser {
     password: String,
     is_admin: Option<String>,
 }
-async fn new_user_handler(
-    auth_session: AuthSession,
-    State(conn): State<Pool<Sqlite>>,
-    Form(body): Form<FormUser>,
-) -> impl IntoResponse {
+async fn new_user_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>, Form(body): Form<FormUser>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
             if user.role == Role::Admin {
@@ -647,21 +572,12 @@ async fn new_user_handler(
                             ..User::default()
                         };
                         sqlite::create_user(&new_user, &conn).await;
-                        Html(html_render::simple_message("user created", Some("/admin")))
-                            .into_response()
+                        Html(html_render::simple_message("user created", Some("/admin"))).into_response()
                     }
-                    Err(_) => Html(html_render::simple_message(
-                        "unable to add new user, see logs",
-                        Some("/admin"),
-                    ))
-                    .into_response(),
+                    Err(_) => Html(html_render::simple_message("unable to add new user, see logs", Some("/admin"))).into_response(),
                 }
             } else {
-                Html(html_render::simple_message(
-                    "your are not allowed to create users",
-                    Some("/"),
-                ))
-                .into_response()
+                Html(html_render::simple_message("your are not allowed to create users", Some("/"))).into_response()
             }
         }
         None => unauthorized_response().into_response(),
@@ -720,26 +636,14 @@ async fn change_user_handler(
                                 ))
                                 .into_response()
                             } else {
-                                Html(html_render::simple_message(
-                                    "you can't delete admin account",
-                                    Some("/admin"),
-                                ))
-                                .into_response()
+                                Html(html_render::simple_message("you can't delete admin account", Some("/admin"))).into_response()
                             }
                         }
                     }
-                    Err(_) => Html(html_render::simple_message(
-                        "unable to hash password",
-                        Some("/"),
-                    ))
-                    .into_response(),
+                    Err(_) => Html(html_render::simple_message("unable to hash password", Some("/"))).into_response(),
                 }
             } else {
-                Html(html_render::simple_message(
-                    "your are not allowed to modify users",
-                    Some("/"),
-                ))
-                .into_response()
+                Html(html_render::simple_message("your are not allowed to modify users", Some("/"))).into_response()
             }
         }
         None => unauthorized_response().into_response(),
@@ -762,46 +666,37 @@ async fn admin_library_handler(
                 let option = vec_body.first().unwrap_or(&"").to_string();
                 let _value = vec_body.last().unwrap_or(&"").to_string();
                 match option.as_str() {
-                        "delete" => {
-                            // TODO handle library.first() like for `full_rescan`
-                            let library = sqlite::get_library(None, Some(&library_id), &conn).await;
-                            info!("user [{}] asked for delete library [{}]", &user.name, &library[0].name);
-                            sqlite::delete_library_from_id(&library, &conn).await;
-                            // TODO delete in tables `covers`, `directories` and `reading`
-                            sqlite::delete_files_from_library(&library, &conn).await;
-                            info!("library [{}] deleted", &library[0].name);
+                    "delete" => {
+                        // TODO handle library.first() like for `full_rescan`
+                        let library = sqlite::get_library(None, Some(&library_id), &conn).await;
+                        info!("user [{}] asked for delete library [{}]", &user.name, &library[0].name);
+                        sqlite::delete_library_from_id(&library, &conn).await;
+                        // TODO delete in tables `covers`, `directories` and `reading`
+                        sqlite::delete_files_from_library(&library, &conn).await;
+                        info!("library [{}] deleted", &library[0].name);
+                        Html(html_render::simple_message(
+                            &format!("delete lib id = {}", &library[0].name),
+                            Some("/admin"),
+                        ))
+                        .into_response()
+                    }
+                    "full_rescan" => match sqlite::get_library(None, Some(&library_id), &conn).await.first() {
+                        Some(library) => {
+                            info!("user [{}] asked for a full rescan of library [{}]", &user.name, &library.name);
+                            scanner::launch_scan(library, &conn).await.ok();
                             Html(html_render::simple_message(
-                                &format!("delete lib id = {}", &library[0].name),
+                                &format!("library {} scanned (<a href=\"/admin\">return to admin panel</a>)", &library.name),
                                 Some("/admin"),
                             ))
                             .into_response()
                         }
-                        "full_rescan" => {
-                            match sqlite::get_library(None, Some(&library_id), &conn)
-                                .await
-                                .first()
-                            {
-                                Some(library) => {
-                                    info!("user [{}] asked for a full rescan of library [{}]", &user.name, &library.name);
-                                    scanner::launch_scan(library, &conn).await.ok();
-                                    Html(html_render::simple_message(
-                                        &format!("library {} scanned (<a href=\"/admin\">return to admin panel</a>)", &library.name),
-                                        Some("/admin"),
-                                    ))
-                                    .into_response()
-                                }
-                                None => {
-                                    Html(html_render::simple_message(
-                                        "unable to find library in database",
-                                        Some("/admin"),
-                                    ))
-                                    .into_response()
-                                }
-                            }
-                        }
-                        "covers" => Html(format!("TODO : lib id = {library_id}, covers flag toggle (<a href=\"/admin\">return to admin panel</a>)"))
-                            .into_response(),
-                        _ => error_handler().into_response(),
+                        None => Html(html_render::simple_message("unable to find library in database", Some("/admin"))).into_response(),
+                    },
+                    "covers" => Html(format!(
+                        "TODO : lib id = {library_id}, covers flag toggle (<a href=\"/admin\">return to admin panel</a>)"
+                    ))
+                    .into_response(),
+                    _ => error_handler().into_response(),
                 }
             } else {
                 unauthorized_response().into_response()
@@ -821,11 +716,7 @@ fn authent_error() -> String {
     String::from("Autentication error")
 }
 
-async fn library_handler(
-    auth_session: AuthSession,
-    State(conn): State<Pool<Sqlite>>,
-    path: Option<Path<String>>,
-) -> impl IntoResponse {
+async fn library_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>, path: Option<Path<String>>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
             // sub_path is the string after the first `/`
@@ -841,10 +732,7 @@ async fn library_handler(
                 // construct library list
                 let library_list: Vec<Library> = {
                     // TODO move this in `sqlite` mod
-                    match sqlx::query_as("SELECT * FROM libraries;")
-                        .fetch_all(&conn)
-                        .await
-                    {
+                    match sqlx::query_as("SELECT * FROM libraries;").fetch_all(&conn).await {
                         Ok(library_list_rows) => library_list_rows,
                         Err(e) => {
                             warn!("empty library : {}", e);
@@ -886,10 +774,7 @@ async fn library_handler(
                         let mut vec_splitted_path: VecDeque<&str> = path.split('/').collect();
                         let library_name = vec_splitted_path[0].to_string();
                         vec_splitted_path.pop_front();
-                        let end: String = vec_splitted_path
-                            .iter()
-                            .map(|s| "/".to_string() + s)
-                            .collect();
+                        let end: String = vec_splitted_path.iter().map(|s| "/".to_string() + s).collect();
                         (library_name, end)
                     }
                     None => ("".to_string(), "".to_string()),
@@ -919,27 +804,23 @@ async fn library_handler(
                 // construct lists
                 let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = {
                     // TODO pagination ? set limit in conf
-                    let files_list: Vec<FileInfo> =
-                        match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
-                            .bind(&query_parent_path)
-                            .fetch_all(&conn)
-                            .await
-                        {
-                            Ok(files_list) => files_list,
-                            Err(e) => {
-                                warn!("empty library : {}", e);
-                                let empty_list: Vec<FileInfo> = Vec::with_capacity(0);
-                                empty_list
-                            }
-                        };
+                    let files_list: Vec<FileInfo> = match sqlx::query_as("SELECT * FROM files WHERE parent_path = ?;")
+                        .bind(&query_parent_path)
+                        .fetch_all(&conn)
+                        .await
+                    {
+                        Ok(files_list) => files_list,
+                        Err(e) => {
+                            warn!("empty library : {}", e);
+                            let empty_list: Vec<FileInfo> = Vec::with_capacity(0);
+                            empty_list
+                        }
+                    };
                     // add bookmark and read status to the list
-                    let mut files_list_with_status: Vec<(FileInfo, bool, bool)> =
-                        Vec::with_capacity(files_list.capacity());
+                    let mut files_list_with_status: Vec<(FileInfo, bool, bool)> = Vec::with_capacity(files_list.capacity());
                     for file in files_list {
-                        let bookmark_status =
-                            sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
-                        let read_status =
-                            sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
+                        let bookmark_status = sqlite::get_flag_status("bookmark", user.id, &file.id, &conn).await;
+                        let read_status = sqlite::get_flag_status("read_status", user.id, &file.id, &conn).await;
                         files_list_with_status.push((file, bookmark_status, read_status));
                     }
                     files_list_with_status
@@ -949,19 +830,18 @@ async fn library_handler(
                 let mut directories_list: Vec<DirectoryInfo> = {
                     info!("get /library{} : {}", &sub_path, &user.name);
                     // TODO set limit in conf
-                    let directories_list: Vec<DirectoryInfo> =
-                        match sqlx::query_as("SELECT * FROM directories WHERE parent_path = ?;")
-                            .bind(&query_parent_path)
-                            .fetch_all(&conn)
-                            .await
-                        {
-                            Ok(directories_list) => directories_list,
-                            Err(e) => {
-                                warn!("empty library : {}", e);
-                                let empty_list: Vec<DirectoryInfo> = Vec::new();
-                                empty_list
-                            }
-                        };
+                    let directories_list: Vec<DirectoryInfo> = match sqlx::query_as("SELECT * FROM directories WHERE parent_path = ?;")
+                        .bind(&query_parent_path)
+                        .fetch_all(&conn)
+                        .await
+                    {
+                        Ok(directories_list) => directories_list,
+                        Err(e) => {
+                            warn!("empty library : {}", e);
+                            let empty_list: Vec<DirectoryInfo> = Vec::new();
+                            empty_list
+                        }
+                    };
                     directories_list
                 };
                 directories_list.sort();
@@ -991,10 +871,7 @@ async fn get_root(auth_session: AuthSession) -> impl IntoResponse {
             debug!("GET /, no user found, login form");
             (
                 StatusCode::OK,
-                [
-                    (header::CONTENT_TYPE, "text/html"),
-                    (header::VARY, "Accept-Encoding"),
-                ],
+                [(header::CONTENT_TYPE, "text/html"), (header::VARY, "Accept-Encoding")],
                 Html(html_render::login_form()),
             )
                 .into_response()
@@ -1070,12 +947,8 @@ async fn get_root_file(Path(path): Path<String>) -> impl IntoResponse {
             }
         }
         "apple-touch-icon.png" => get_png("images/apple-touch-icon.png").into_response(),
-        "web-app-manifest-192x192.png" => {
-            get_png("images/web-app-manifest-192x192.png").into_response()
-        }
-        "web-app-manifest-512x512.png" => {
-            get_png("images/web-app-manifest-512x512.png").into_response()
-        }
+        "web-app-manifest-192x192.png" => get_png("images/web-app-manifest-192x192.png").into_response(),
+        "web-app-manifest-512x512.png" => get_png("images/web-app-manifest-512x512.png").into_response(),
         "site.webmanifest" => {
             let webmanifest = include_bytes!("../site.webmanifest");
             let webmanifest = match std::str::from_utf8(webmanifest) {
@@ -1116,10 +989,7 @@ fn create_css() -> String {
             if filename.contains("eloran.css") {
                 eloran_css = fs::read_to_string(file.path()).unwrap();
             } else {
-                warn!(
-                    "css file must be named eloran.css, file [{}] will be ignored",
-                    filename
-                );
+                warn!("css file must be named eloran.css, file [{}] will be ignored", filename);
             }
         }
     }
@@ -1146,9 +1016,7 @@ async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
         _ => {
             let css_file_content = fs::read_to_string(format!("css/{path}"));
             match css_file_content {
-                Ok(css) => {
-                    (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], css).into_response()
-                }
+                Ok(css) => (StatusCode::OK, [(header::CONTENT_TYPE, "text/css")], css).into_response(),
                 Err(_) => {
                     error!("css {path} not found");
                     // TODO true 404 page ?
@@ -1265,10 +1133,7 @@ impl AuthnBackend for Backend {
     type User = User;
     type Credentials = Credentials;
     type Error = sqlx::Error;
-    async fn authenticate(
-        &self,
-        creds: Self::Credentials,
-    ) -> Result<Option<Self::User>, Self::Error> {
+    async fn authenticate(&self, creds: Self::Credentials) -> Result<Option<Self::User>, Self::Error> {
         let user: Option<Self::User> = sqlx::query_as("select * from users where name = ? ")
             .bind(creds.username)
             .fetch_optional(&self.db)
@@ -1277,9 +1142,7 @@ impl AuthnBackend for Backend {
             // We're using password-based authentication--this
             // works by comparing our form input with an argon2
             // password hash.
-            verify_password(creds.password, &user.password_hash)
-                .ok()
-                .is_some()
+            verify_password(creds.password, &user.password_hash).ok().is_some()
         }))
     }
     async fn get_user(&self, user_id: &UserId<Self>) -> Result<Option<Self::User>, Self::Error> {
@@ -1329,10 +1192,7 @@ async fn create_router() -> Router {
                 .route("/search", post(search_handler))
                 .route("/download/{file_id}", get(download_handler))
                 .route("/read/{file_id}/{page}", get(reader_handler))
-                .route(
-                    "/comic_page/{file_id}/{page}/{size}",
-                    get(comic_page_handler),
-                )
+                .route("/comic_page/{file_id}/{page}/{size}", get(comic_page_handler))
                 .route("/infos/{file_id}", get(infos_handler))
                 .route("/cover/{file_id}", get(cover_handler))
                 .route_layer(login_required!(Backend, login_url = "/"))
@@ -1381,18 +1241,16 @@ pub async fn start_http_server(bind: &str) -> Result<(), String> {
     // see https://docs.rs/tower-http/latest/tower_http/normalize_path/struct.NormalizePathLayer.html?search=trim_trailing_slash#method.trim_trailing_slash
     // and
     // https://stackoverflow.com/questions/75355826/route-paths-with-or-without-of-trailing-slashes-in-rust-axum
-
-    let listener = tokio::net::TcpListener::bind(bind).await.unwrap();
-    axum::serve(listener, router.await.into_make_service())
-        .await
-        .expect("unable to bind http server");
-    // TODO check if server started
-    // axum::Server::bind(&bind)
-    //     .serve(router.await.into_make_service())
-    //     .await
-    //     .expect("unable to bind http server");
-
-    Ok(())
+    match tokio::net::TcpListener::bind(bind).await {
+        Ok(listener) => {
+            // TODO check if server started
+            axum::serve(listener, router.await.into_make_service())
+                .await
+                .expect("unable to bind http server");
+            Ok(())
+        }
+        Err(e) => Err(format!("{e}")),
+    }
 }
 
 #[cfg(test)]
@@ -1414,11 +1272,7 @@ mod tests {
         let largeicon = client.get("/web-app-manifest-192x192.png").await;
         assert_eq!(largeicon.status_code(), StatusCode::OK);
         // test 404
-        client
-            .get("/css/not_found")
-            .expect_failure()
-            .await
-            .assert_status_not_found();
+        client.get("/css/not_found").expect_failure().await.assert_status_not_found();
     }
     #[tokio::test]
     async fn test_login_logout() {
@@ -1471,16 +1325,9 @@ mod tests {
         insta::assert_yaml_snapshot!(res.text());
 
         // css error
-        client
-            .get("/css/not_found")
-            .expect_failure()
-            .await
-            .assert_status_not_found();
+        client.get("/css/not_found").expect_failure().await.assert_status_not_found();
 
-        client
-            .get("/css/eloran.css")
-            .await
-            .assert_header("content-type", "text/css");
+        client.get("/css/eloran.css").await.assert_header("content-type", "text/css");
 
         // delete database
         let _ = Sqlite::drop_database(crate::DB_URL).await;

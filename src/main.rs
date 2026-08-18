@@ -23,7 +23,10 @@ async fn main() -> Result<(), String> {
     let conf: conf::Conf = init_conf(args);
 
     // databases
-    sqlite::init_database().await?;
+    if let Err(e) = sqlite::init_database().await {
+        error!("Unable to create database");
+        return Err(e);
+    }
     // TODO remove defaults users when install page is done
     sqlite::init_default_users().await;
     if conf.library_path.is_some() {
@@ -47,7 +50,10 @@ async fn main() -> Result<(), String> {
     });
 
     // start web server
-    http_server::start_http_server(&conf.bind).await?;
+    if let Err(e) = http_server::start_http_server(&conf.bind).await {
+        error!("Unable to start http server");
+        return Err(e);
+    }
 
     Ok(())
 }

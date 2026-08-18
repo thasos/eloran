@@ -32,19 +32,12 @@ pub async fn init_database() -> Result<(), String> {
     if !database_path.is_dir() {
         match fs::create_dir(database_path) {
             Ok(_) => (),
-            Err(e) => error!(
-                "failed to create [{}] : {}",
-                database_path.to_string_lossy(),
-                e
-            ),
+            Err(e) => error!("failed to create [{}] : {}", database_path.to_string_lossy(), e),
         }
     }
 
     // create sqlite database if needed
-    if !Sqlite::database_exists(crate::DB_URL)
-        .await
-        .unwrap_or(false)
-    {
+    if !Sqlite::database_exists(crate::DB_URL).await.unwrap_or(false) {
         info!("creating database [{}]", crate::DB_URL);
         match Sqlite::create_database(crate::DB_URL).await {
             Ok(_) => {
@@ -155,10 +148,7 @@ pub async fn create_user(user: &User, conn: &Pool<Sqlite>) {
         .execute(conn)
         .await
     {
-        Ok(_) => info!(
-            "user {} successfully created with role {:?}",
-            &user.name, &user.role
-        ),
+        Ok(_) => info!("user {} successfully created with role {:?}", &user.name, &user.role),
         Err(e) => error!("failed to create user {} : {}", &user.name, e),
     }
 }
@@ -176,11 +166,7 @@ pub async fn update_user(user: &User, conn: &Pool<Sqlite>) {
     }
 }
 pub async fn delete_user(user: &User, conn: &Pool<Sqlite>) {
-    match sqlx::query("DELETE FROM users WHERE id = ?;")
-        .bind(user.id)
-        .execute(conn)
-        .await
-    {
+    match sqlx::query("DELETE FROM users WHERE id = ?;").bind(user.id).execute(conn).await {
         Ok(_) => info!("user {} successfully deleted", &user.name),
         Err(e) => error!("failed to delete user {} : {}", &user.name, e),
     }
@@ -192,12 +178,7 @@ pub async fn create_library_path(library_path: Vec<String>) {
     for path in library_path {
         let library = Library {
             id: 0,
-            name: path
-                .trim_end_matches('/')
-                .split('/')
-                .next_back()
-                .unwrap()
-                .to_string(),
+            name: path.trim_end_matches('/').split('/').next_back().unwrap().to_string(),
             path: path.to_string(),
             last_successfull_scan_date: 0,
             last_successfull_extract_date: 0,
@@ -254,10 +235,7 @@ pub async fn update_library_file_count(library: &Library, conn: &Pool<Sqlite>) {
     .await
     {
         Ok(_) => debug!("insert file count for library [{}]", library.id),
-        Err(e) => error!(
-            "unable to set file count for library [{}] : {e}",
-            library.name
-        ),
+        Err(e) => error!("unable to set file count for library [{}] : {e}", library.name),
     };
 }
 
@@ -278,11 +256,7 @@ pub async fn delete_files_from_library(library_list: &Vec<Library>, conn: &Pool<
 
 /// retrieve all the library path in database
 /// we can specify a name, in this case, return a Vec with one row
-pub async fn get_library(
-    name: Option<&str>,
-    id: Option<&str>,
-    conn: &Pool<Sqlite>,
-) -> Vec<Library> {
+pub async fn get_library(name: Option<&str>, id: Option<&str>, conn: &Pool<Sqlite>) -> Vec<Library> {
     // add a WHERE condition when a name is given
     let where_clause = if name.is_some() {
         match name {
@@ -330,22 +304,18 @@ pub async fn _get_files_from_path(file_path: &str, conn: &Pool<Sqlite>) -> FileI
     // remove last '/'
     parent_path.pop();
 
-    let file: FileInfo =
-        match sqlx::query_as("SELECT * FROM files WHERE parent_path = ? AND name = ?;")
-            .bind(parent_path)
-            .bind(file_name)
-            .fetch_one(conn)
-            .await
-        {
-            Ok(file_found) => file_found,
-            Err(e) => {
-                error!(
-                    "unable to retrieve file infos from path from database : {}",
-                    e
-                );
-                FileInfo::new()
-            }
-        };
+    let file: FileInfo = match sqlx::query_as("SELECT * FROM files WHERE parent_path = ? AND name = ?;")
+        .bind(parent_path)
+        .bind(file_name)
+        .fetch_one(conn)
+        .await
+    {
+        Ok(file_found) => file_found,
+        Err(e) => {
+            error!("unable to retrieve file infos from path from database : {}", e);
+            FileInfo::new()
+        }
+    };
     file
 }
 
@@ -358,10 +328,7 @@ pub async fn get_files_from_file_id(file_id: &str, conn: &Pool<Sqlite>) -> Optio
     {
         Ok(file_found) => Some(file_found),
         Err(e) => {
-            error!(
-                "unable to retrieve file infos from id from database : {}",
-                e
-            );
+            error!("unable to retrieve file infos from id from database : {}", e);
             None
         }
     };
@@ -389,22 +356,17 @@ pub async fn get_reading_files_from_user_id(user_id: &i64, conn: &Pool<Sqlite>) 
 }
 
 /// get currentPage from file id (can be usefull for sync)
-pub async fn get_current_page_from_file_id(
-    user_id: i64,
-    file_id: &str,
-    conn: &Pool<Sqlite>,
-) -> i32 {
-    let page_number: i32 =
-        match sqlx::query("SELECT page FROM reading WHERE file_id = ? AND user_id = ?;")
-            .bind(file_id)
-            .bind(user_id)
-            .fetch_one(conn)
-            .await
-        {
-            Ok(file_found) => file_found.get("page"),
-            // set page to 0 if not set
-            Err(_) => 0,
-        };
+pub async fn get_current_page_from_file_id(user_id: i64, file_id: &str, conn: &Pool<Sqlite>) -> i32 {
+    let page_number: i32 = match sqlx::query("SELECT page FROM reading WHERE file_id = ? AND user_id = ?;")
+        .bind(file_id)
+        .bind(user_id)
+        .fetch_one(conn)
+        .await
+    {
+        Ok(file_found) => file_found.get("page"),
+        // set page to 0 if not set
+        Err(_) => 0,
+    };
     page_number
 }
 
@@ -422,12 +384,7 @@ pub async fn remove_file_id_from_reading(file_id: &str, user_id: &i64, conn: &Po
 }
 
 /// set currentPage from file id
-pub async fn set_current_page_for_file_id(
-    file_id: &str,
-    user_id: &i64,
-    page: &i32,
-    conn: &Pool<Sqlite>,
-) {
+pub async fn set_current_page_for_file_id(file_id: &str, user_id: &i64, page: &i32, conn: &Pool<Sqlite>) {
     match sqlx::query("INSERT OR REPLACE INTO reading(file_id,user_id,page) VALUES (?, ?, ?);")
         .bind(file_id)
         .bind(user_id)
@@ -435,15 +392,9 @@ pub async fn set_current_page_for_file_id(
         .execute(conn)
         .await
     {
-        Ok(_) => debug!(
-            "current_page successfully setted to {} for id {}",
-            page, file_id
-        ),
+        Ok(_) => debug!("current_page successfully setted to {} for id {}", page, file_id),
         Err(e) => {
-            error!(
-                "unable to set current page from database fore id {} : {}",
-                file_id, e
-            );
+            error!("unable to set current page from database fore id {} : {}", file_id, e);
         }
     };
 }
@@ -457,10 +408,7 @@ pub async fn insert_cover(file: &FileInfo, cover: &Vec<u8>, conn: &Pool<Sqlite>)
         .await
     {
         Ok(_) => debug!("cover updated for file {}/{}", file.parent_path, file.name),
-        Err(e) => error!(
-            "failed to update covers for file {}/{} : {e}",
-            file.parent_path, file.name
-        ),
+        Err(e) => error!("failed to update covers for file {}/{} : {e}", file.parent_path, file.name),
     };
 }
 
@@ -472,14 +420,8 @@ pub async fn insert_total_pages(file: &FileInfo, total_pages: i32, conn: &Pool<S
         .execute(conn)
         .await
     {
-        Ok(_) => debug!(
-            "total_pages updated for file {}/{}",
-            file.parent_path, file.name
-        ),
-        Err(e) => error!(
-            "failed to update total_pages for file {}/{} : {e}",
-            file.parent_path, file.name
-        ),
+        Ok(_) => debug!("total_pages updated for file {}/{}", file.parent_path, file.name),
+        Err(e) => error!("failed to update total_pages for file {}/{} : {e}", file.parent_path, file.name),
     };
 }
 
@@ -492,10 +434,7 @@ pub async fn get_cover_from_id(file: &FileInfo, conn: &Pool<Sqlite>) -> Option<V
     {
         Ok(cover) => Some(cover.get("cover")),
         Err(e) => {
-            warn!(
-                "failed to get cover for file {}/{} : {e}",
-                file.parent_path, file.name
-            );
+            warn!("failed to get cover for file {}/{} : {e}", file.parent_path, file.name);
             None
         }
     }
@@ -509,14 +448,8 @@ pub async fn set_scan_flag(file: &FileInfo, flag: i8, conn: &Pool<Sqlite>) {
         .execute(conn)
         .await
     {
-        Ok(_) => debug!(
-            "total_pages updated for file {}/{}",
-            file.parent_path, file.name
-        ),
-        Err(e) => error!(
-            "failed to update total_pages for file {}/{} : {e}",
-            file.parent_path, file.name
-        ),
+        Ok(_) => debug!("total_pages updated for file {}/{}", file.parent_path, file.name),
+        Err(e) => error!("failed to update total_pages for file {}/{} : {e}", file.parent_path, file.name),
     };
 }
 
@@ -576,11 +509,7 @@ pub async fn set_flag_status(
     };
 
     // retrieve fav_list for user
-    match sqlx::query(select_query)
-        .bind(file_id)
-        .fetch_one(conn)
-        .await
-    {
+    match sqlx::query(select_query).bind(file_id).fetch_one(conn).await {
         Ok(user_list) => {
             let flag_status: bool;
             let user_list_string: String = user_list.get(flag_field);
@@ -590,8 +519,7 @@ pub async fn set_flag_status(
             } else {
                 // create new list
                 // String `1,2,3,...` to Vec `[1, 2, 3, ...]`
-                let mut user_list_vec: Vec<String> =
-                    user_list_string.split(',').map(|x| x.to_string()).collect();
+                let mut user_list_vec: Vec<String> = user_list_string.split(',').map(|x| x.to_string()).collect();
                 // insert or remove user form list
                 if let Ok(found_user_index) = user_list_vec.binary_search(&user_id.to_string()) {
                     flag_status = false;
@@ -604,12 +532,7 @@ pub async fn set_flag_status(
                 user_list_vec.join(",")
             };
             // set status
-            match sqlx::query(toggle_query)
-                .bind(updated_user_list)
-                .bind(file_id)
-                .execute(conn)
-                .await
-            {
+            match sqlx::query(toggle_query).bind(updated_user_list).bind(file_id).execute(conn).await {
                 Ok(_) => {
                     debug!("flag {} {} setted to user {}", flag, file_id, user_id);
                     // remove file from reading list if we set read_status to true
@@ -617,18 +540,12 @@ pub async fn set_flag_status(
                         remove_file_id_from_reading(file_id, &user_id, conn).await;
                     }
                 }
-                Err(e) => error!(
-                    "failed to add flag {} {} to user {} : {e}",
-                    flag, file_id, user_id,
-                ),
+                Err(e) => error!("failed to add flag {} {} to user {} : {e}", flag, file_id, user_id,),
             };
             flag_status
         }
         Err(e) => {
-            error!(
-                "failed to add {} {} to user {} : {e}",
-                flag, file_id, user_id,
-            );
+            error!("failed to add {} {} to user {} : {e}", flag, file_id, user_id,);
             false
         }
     }
@@ -636,10 +553,7 @@ pub async fn set_flag_status(
 
 pub async fn get_flag_status(flag: &str, user_id: i64, file_id: &str, conn: &Pool<Sqlite>) -> bool {
     let (request, column) = match flag {
-        "bookmark" => (
-            "SELECT bookmarked_by FROM files WHERE id = ?;",
-            "bookmarked_by",
-        ),
+        "bookmark" => ("SELECT bookmarked_by FROM files WHERE id = ?;", "bookmarked_by"),
         "read_status" => ("SELECT read_by FROM files WHERE id = ?;", "read_by"),
         _ => ("", ""),
     };
@@ -660,10 +574,7 @@ pub async fn bookmarks_for_user_id(id: i64, conn: &Pool<Sqlite>) -> Vec<FileInfo
     let results: Vec<FileInfo> = match sqlx::query_as(&request).fetch_all(conn).await {
         Ok(files_list) => files_list,
         Err(e) => {
-            error!(
-                "unable to find bookmarked files in database for user id {}: {e}",
-                id
-            );
+            error!("unable to find bookmarked files in database for user id {}: {e}", id);
             Vec::with_capacity(0)
         }
     };
@@ -685,10 +596,7 @@ pub async fn search_file_from_string(search_query: &str, conn: &Pool<Sqlite>) ->
     results
 }
 
-pub async fn search_directory_from_string(
-    search_query: &str,
-    conn: &Pool<Sqlite>,
-) -> Vec<DirectoryInfo> {
+pub async fn search_directory_from_string(search_query: &str, conn: &Pool<Sqlite>) -> Vec<DirectoryInfo> {
     let request = format!(
         "SELECT * FROM directories WHERE name LIKE '%{}%' OR parent_path LIKE '%{}%';",
         search_query, search_query
@@ -704,11 +612,7 @@ pub async fn search_directory_from_string(
 }
 
 /// get all file in a directory path from database
-pub async fn get_files_from_directory(
-    parent_path: &str,
-    directory_name: &str,
-    conn: &Pool<Sqlite>,
-) -> Vec<FileInfo> {
+pub async fn get_files_from_directory(parent_path: &str, directory_name: &str, conn: &Pool<Sqlite>) -> Vec<FileInfo> {
     // WHY here we need to replace ' with '' in sqlite query ???
     let files: Vec<FileInfo> = match sqlx::query_as(&format!(
         "SELECT * FROM files WHERE parent_path = '{}/{}'",
@@ -730,27 +634,22 @@ pub async fn get_files_from_directory(
 
 /// get last successfull scan date in EPOCH format from database
 pub async fn get_last_successfull_scan_date(library_id: i64, conn: &Pool<Sqlite>) -> Duration {
-    let last_successfull_scan_date: i64 =
-        match sqlx::query("SELECT last_successfull_scan_date FROM libraries WHERE id = ?")
-            .bind(library_id)
-            .fetch_one(conn)
-            .await
-        {
-            Ok(epoch_date_row) => {
-                let epoch_date: i64 = epoch_date_row
-                    .try_get("last_successfull_scan_date")
-                    .unwrap();
-                // TODO pretty display of epoch time
-                info!("last successfull scan date : {}", &epoch_date);
-                epoch_date
-            }
-            Err(_) => {
-                warn!(
-                "could not found last successfull scan date, I will perform a full scan, be patient"
-            );
-                0
-            }
-        };
+    let last_successfull_scan_date: i64 = match sqlx::query("SELECT last_successfull_scan_date FROM libraries WHERE id = ?")
+        .bind(library_id)
+        .fetch_one(conn)
+        .await
+    {
+        Ok(epoch_date_row) => {
+            let epoch_date: i64 = epoch_date_row.try_get("last_successfull_scan_date").unwrap();
+            // TODO pretty display of epoch time
+            info!("last successfull scan date : {}", &epoch_date);
+            epoch_date
+        }
+        Err(_) => {
+            warn!("could not found last successfull scan date, I will perform a full scan, be patient");
+            0
+        }
+    };
     Duration::from_secs(u64::try_from(last_successfull_scan_date).unwrap())
 }
 
@@ -802,18 +701,14 @@ pub async fn delete_file(file: &FileInfo, conn: &Pool<Sqlite>) {
 
 /// get all diretories in a path from database
 pub async fn get_registered_directories(conn: &Pool<Sqlite>) -> Vec<DirectoryInfo> {
-    let registered_directories: Vec<DirectoryInfo> =
-        match sqlx::query_as("SELECT * FROM directories ;")
-            .fetch_all(conn)
-            .await
-        {
-            Ok(file_found) => file_found,
-            Err(e) => {
-                error!("unable to retrieve directories from database : {}", e);
-                let empty_list: Vec<DirectoryInfo> = Vec::new();
-                empty_list
-            }
-        };
+    let registered_directories: Vec<DirectoryInfo> = match sqlx::query_as("SELECT * FROM directories ;").fetch_all(conn).await {
+        Ok(file_found) => file_found,
+        Err(e) => {
+            error!("unable to retrieve directories from database : {}", e);
+            let empty_list: Vec<DirectoryInfo> = Vec::new();
+            empty_list
+        }
+    };
     registered_directories
 }
 
@@ -830,58 +725,45 @@ pub async fn delete_directory(directory: &DirectoryInfo, conn: &Pool<Sqlite>) {
     .await
     {
         Ok(_) => {
-            info!(
-                "directory {}/{} deleted",
-                directory.name, directory.parent_path
-            )
+            info!("directory {}/{} deleted", directory.name, directory.parent_path)
         }
         Err(e) => error!("unable to delete directory in database : {e}"),
     }
 }
 
 /// return a directory if it exists in database
-pub async fn check_if_directory_exists(
-    parent_path: &str,
-    directory_name: &str,
-    conn: &Pool<Sqlite>,
-) -> Vec<DirectoryInfo> {
-    let directory_found: Vec<DirectoryInfo> =
-        match sqlx::query_as("SELECT * FROM directories WHERE name = ? AND parent_path = ?;")
-            .bind(directory_name)
-            .bind(parent_path)
-            .fetch_all(conn)
-            .await
-        {
-            Ok(dir_found) => dir_found,
-            Err(e) => {
-                error!("unable to check if directory exists in database : {}", e);
-                let empty_list: Vec<DirectoryInfo> = Vec::new();
-                empty_list
-            }
-        };
+pub async fn check_if_directory_exists(parent_path: &str, directory_name: &str, conn: &Pool<Sqlite>) -> Vec<DirectoryInfo> {
+    let directory_found: Vec<DirectoryInfo> = match sqlx::query_as("SELECT * FROM directories WHERE name = ? AND parent_path = ?;")
+        .bind(directory_name)
+        .bind(parent_path)
+        .fetch_all(conn)
+        .await
+    {
+        Ok(dir_found) => dir_found,
+        Err(e) => {
+            error!("unable to check if directory exists in database : {}", e);
+            let empty_list: Vec<DirectoryInfo> = Vec::new();
+            empty_list
+        }
+    };
     directory_found
 }
 
 /// return a file if it exists in database
-pub async fn check_if_file_exists(
-    parent_path: &str,
-    filename: &str,
-    conn: &Pool<Sqlite>,
-) -> Vec<FileInfo> {
-    let file_found: Vec<FileInfo> =
-        match sqlx::query_as("SELECT * FROM files WHERE name = ? AND parent_path = ?;")
-            .bind(filename)
-            .bind(parent_path)
-            .fetch_all(conn)
-            .await
-        {
-            Ok(file_found) => file_found,
-            Err(e) => {
-                error!("unable to check if file exists in database : {}", e);
-                let empty_list: Vec<FileInfo> = Vec::new();
-                empty_list
-            }
-        };
+pub async fn check_if_file_exists(parent_path: &str, filename: &str, conn: &Pool<Sqlite>) -> Vec<FileInfo> {
+    let file_found: Vec<FileInfo> = match sqlx::query_as("SELECT * FROM files WHERE name = ? AND parent_path = ?;")
+        .bind(filename)
+        .bind(parent_path)
+        .fetch_all(conn)
+        .await
+    {
+        Ok(file_found) => file_found,
+        Err(e) => {
+            error!("unable to check if file exists in database : {}", e);
+            let empty_list: Vec<FileInfo> = Vec::new();
+            empty_list
+        }
+    };
     file_found
 }
 
@@ -940,17 +822,11 @@ pub async fn get_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<boo
     {
         Ok(lock) => {
             let lock_status: bool = lock.get("scan_lock");
-            debug!(
-                "scan_lock state for library [{}] : {}",
-                library.name, lock_status
-            );
+            debug!("scan_lock state for library [{}] : {}", library.name, lock_status);
             Ok(lock_status)
         }
         Err(_) => {
-            let msg = format!(
-                "could not get scan_lock status for library [{}]",
-                library.name
-            );
+            let msg = format!("could not get scan_lock status for library [{}]", library.name);
             warn!("{msg}");
             Err(msg)
         }
@@ -960,12 +836,10 @@ pub async fn get_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<boo
 /// lock scan for a library
 pub async fn toggle_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<(), String> {
     // toggle boolean in sqlite
-    match sqlx::query(
-        "UPDATE libraries SET scan_lock = ((scan_lock | 1) - (scan_lock & 1)) WHERE id = ?",
-    )
-    .bind(library.id)
-    .execute(conn)
-    .await
+    match sqlx::query("UPDATE libraries SET scan_lock = ((scan_lock | 1) - (scan_lock & 1)) WHERE id = ?")
+        .bind(library.id)
+        .execute(conn)
+        .await
     {
         Ok(_) => {
             info!("scan_lock updated for library [{}]", library.name);
@@ -981,10 +855,7 @@ pub async fn toggle_scan_lock(library: &Library, conn: &Pool<Sqlite>) -> Result<
 
 /// reset scan lock for all libraries
 pub async fn reset_scan_lock(conn: &Pool<Sqlite>) -> Result<(), String> {
-    match sqlx::query("UPDATE libraries SET scan_lock = 0")
-        .execute(conn)
-        .await
-    {
+    match sqlx::query("UPDATE libraries SET scan_lock = 0").execute(conn).await {
         Ok(_) => {
             info!("scan_lock reseted for all libraries");
             Ok(())

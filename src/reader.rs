@@ -14,10 +14,7 @@ use std::io::Cursor;
 // }
 
 pub async fn get_comic_page(file: &FileInfo, page: i32, size: &str) -> Option<Vec<u8>> {
-    info!(
-        "reading comic {}/{} (page {page})",
-        file.parent_path, file.name
-    );
+    info!("reading comic {}/{} (page {page})", file.parent_path, file.name);
     let archive_path = &format!("{}/{}", file.parent_path, file.name);
     match File::open(archive_path) {
         Ok(compressed_comic_file) => {
@@ -31,16 +28,9 @@ pub async fn get_comic_page(file: &FileInfo, page: i32, size: &str) -> Option<Ve
 
                 // RAR need to reopen file... why ? and why rar only ?
                 let compressed_comic_file = File::open(archive_path).expect("file open");
-                match uncompress_archive_file(
-                    &compressed_comic_file,
-                    &mut vec_comic_page,
-                    image_path_in_achive,
-                ) {
+                match uncompress_archive_file(&compressed_comic_file, &mut vec_comic_page, image_path_in_achive) {
                     Ok(_) => (),
-                    Err(e) => warn!(
-                        "unable to extract path '{}' from file '{}' : {e}",
-                        image_path_in_achive, file.name
-                    ),
+                    Err(e) => warn!("unable to extract path '{}' from file '{}' : {e}", image_path_in_achive, file.name),
                 }
                 // return img in jpg
                 let dyn_image_comic_page = image::load_from_memory(&vec_comic_page).ok()?;
@@ -57,8 +47,7 @@ pub async fn get_comic_page(file: &FileInfo, page: i32, size: &str) -> Option<Ve
                 // TODO do not encode if already jpeg ?
                 let mut bytes_comic_page: Vec<u8> = Vec::new();
                 let mut writer = Cursor::new(&mut bytes_comic_page);
-                let jpeg_encoder =
-                    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 75);
+                let jpeg_encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut writer, 75);
                 dyn_image_comic_page.write_with_encoder(jpeg_encoder).ok()?;
                 Some(bytes_comic_page)
             } else {

@@ -206,14 +206,7 @@ fn timestamp_to_pretty_date(timestamp: i64) -> Option<String> {
     Some(pretty_added_date)
 }
 
-pub fn file_info(
-    user: &User,
-    file: &FileInfo,
-    current_page: i32,
-    bookmark_status: bool,
-    read_status: bool,
-    up_link: String,
-) -> String {
+pub fn file_info(user: &User, file: &FileInfo, current_page: i32, bookmark_status: bool, read_status: bool, up_link: String) -> String {
     let menu = menu(Some(user.to_owned()));
     // we need to clone file infos, don't remember why...
     let file = file.clone();
@@ -233,11 +226,7 @@ pub fn file_info(
     // construct file library path for breadcrumb
     let mut breadcrumb_link_path = String::new();
     // separe path elements, delete absolute path...
-    let file_library_path: Vec<&str> = file
-        .parent_path
-        .split('/')
-        .skip_while(|s| *s != file.library_name)
-        .collect();
+    let file_library_path: Vec<&str> = file.parent_path.split('/').skip_while(|s| *s != file.library_name).collect();
     // ... and reassamble
     let file_library_path = file_library_path.join("/");
     // body
@@ -725,14 +714,7 @@ mod tests {
         let bookmark_status = false;
         let read_status = true;
         let up_link = String::from("some/up/link");
-        insta::assert_yaml_snapshot!(file_info(
-            &user,
-            &file,
-            current_page,
-            bookmark_status,
-            read_status,
-            up_link
-        ));
+        insta::assert_yaml_snapshot!(file_info(&user, &file, current_page, bookmark_status, read_status, up_link));
     }
     #[test]
     fn test_flag_toggle() {

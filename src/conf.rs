@@ -37,10 +37,7 @@ pub fn init_conf(args: Vec<String>) -> Conf {
         Err(_) => eprintln!("unable to initiate pretty logging"),
     };
 
-    info!(
-        "starting up version={}",
-        CARGO_PKG_VERSION.unwrap_or("version not found")
-    );
+    info!("starting up version={}", CARGO_PKG_VERSION.unwrap_or("version not found"));
 
     match args.len() {
         2 => {
@@ -59,9 +56,6 @@ mod tests {
     #[test]
     fn test_conf() {
         insta::assert_yaml_snapshot!(init_conf(Vec::new()));
-        insta::assert_yaml_snapshot!(init_conf(vec![
-            "eloran".to_string(),
-            "127.0.0.1:8080".to_string()
-        ]));
+        insta::assert_yaml_snapshot!(init_conf(vec!["eloran".to_string(), "127.0.0.1:8080".to_string()]));
     }
 }
