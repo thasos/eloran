@@ -3,6 +3,7 @@ use crate::scanner::{self, FileInfo};
 use compress_tools::*;
 use epub::doc::EpubDoc;
 use image::imageops::FilterType;
+use log::{info, warn};
 use std::fs::File;
 use std::io::Cursor;
 

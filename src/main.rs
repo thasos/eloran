@@ -6,11 +6,9 @@ mod reader;
 mod scanner;
 mod sqlite;
 
-#[macro_use]
-extern crate log;
-use std::{env, time::Duration};
-
 use crate::conf::init_conf;
+use log::{error, info};
+use std::{env, time::Duration};
 
 const DB_URL: &str = "sqlite://sqlite/eloran.db";
 

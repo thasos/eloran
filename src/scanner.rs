@@ -6,6 +6,7 @@ use epub::doc::EpubDoc;
 use image::imageops::FilterType;
 use image::DynamicImage;
 use jwalk::WalkDirGeneric;
+use log::{debug, error, info, warn};
 use poppler::Document;
 use serde::Serialize;
 use sqlx::pool::Pool;
@@ -537,10 +538,10 @@ pub async fn scan_routine(sleep_time: Duration) {
 
                 // library path loop
                 for library in library_list {
-                    info!("start scan for library [{}]", &library.name);
+                    info!("start scan for library [{}]", library.name);
                     // TODO error handling
                     let _ = launch_scan(&library, &conn).await;
-                    info!("finish scan for library [{}]", &library.name);
+                    info!("finish scan for library [{}]", library.name);
                 }
 
                 // TODO true schedule, last scan status in db...

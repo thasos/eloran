@@ -1,6 +1,7 @@
 use crate::http_server::User;
 use crate::scanner::{DirectoryInfo, FileInfo, Library};
 
+use log::{debug, error, info, warn};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use sqlx::{pool::Pool, Row};
@@ -148,8 +149,8 @@ pub async fn create_user(user: &User, conn: &Pool<Sqlite>) {
         .execute(conn)
         .await
     {
-        Ok(_) => info!("user {} successfully created with role {:?}", &user.name, &user.role),
-        Err(e) => error!("failed to create user {} : {}", &user.name, e),
+        Ok(_) => info!("user {} successfully created with role {:?}", user.name, user.role),
+        Err(e) => error!("failed to create user {} : {}", user.name, e),
     }
 }
 pub async fn update_user(user: &User, conn: &Pool<Sqlite>) {
@@ -161,14 +162,14 @@ pub async fn update_user(user: &User, conn: &Pool<Sqlite>) {
         .execute(conn)
         .await
     {
-        Ok(_) => info!("user {} successfully updated", &user.name),
-        Err(e) => error!("failed to update user {} : {}", &user.name, e),
+        Ok(_) => info!("user {} successfully updated", user.name),
+        Err(e) => error!("failed to update user {} : {}", user.name, e),
     }
 }
 pub async fn delete_user(user: &User, conn: &Pool<Sqlite>) {
     match sqlx::query("DELETE FROM users WHERE id = ?;").bind(user.id).execute(conn).await {
-        Ok(_) => info!("user {} successfully deleted", &user.name),
-        Err(e) => error!("failed to delete user {} : {}", &user.name, e),
+        Ok(_) => info!("user {} successfully deleted", user.name),
+        Err(e) => error!("failed to delete user {} : {}", user.name, e),
     }
 }
 
@@ -642,7 +643,7 @@ pub async fn get_last_successfull_scan_date(library_id: i64, conn: &Pool<Sqlite>
         Ok(epoch_date_row) => {
             let epoch_date: i64 = epoch_date_row.try_get("last_successfull_scan_date").unwrap();
             // TODO pretty display of epoch time
-            info!("last successfull scan date : {}", &epoch_date);
+            info!("last successfull scan date : {}", epoch_date);
             epoch_date
         }
         Err(_) => {
@@ -678,9 +679,9 @@ pub async fn insert_new_file(file: &mut FileInfo, ulid: Option<&str>, conn: &Poo
         .bind(&file.bookmarked_by)
         .execute(conn).await {
         Ok(_) => {
-            debug!("file insertion successfull ({}/{})", &file.parent_path, &file.id)
+            debug!("file insertion successfull ({}/{})", file.parent_path, file.id)
         }
-        Err(e) => error!("file insertion failed ({}/{}) : {e}", &file.parent_path, &file.id),
+        Err(e) => error!("file insertion failed ({}/{}) : {e}", file.parent_path, file.id),
     };
 }
 
@@ -720,7 +721,7 @@ pub async fn delete_directory(directory: &DirectoryInfo, conn: &Pool<Sqlite>) {
     )
     .bind(&directory.name)
     .bind(&directory.parent_path)
-    .bind(format!("{}/{}", &directory.parent_path, &directory.name))
+    .bind(format!("{}/{}", directory.parent_path, directory.name))
     .execute(conn)
     .await
     {

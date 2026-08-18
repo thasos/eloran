@@ -20,6 +20,7 @@ use axum_login::{
     tower_sessions::{Expiry, MemoryStore, SessionManagerLayer},
     AuthManagerLayerBuilder,
 };
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use sqlx::pool::Pool;
 use sqlx::Sqlite;
@@ -54,7 +55,7 @@ fn error_handler() -> Html<String> {
 async fn reading_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
-            info!("get /reading : {}", &user.name);
+            info!("get /reading : {}", user.name);
             // search files
             let mut files_results = sqlite::get_reading_files_from_user_id(&user.id, &conn).await;
             files_results.sort();
@@ -94,7 +95,7 @@ async fn reading_handler(auth_session: AuthSession, State(conn): State<Pool<Sqli
 async fn bookmarks_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
-            info!("get /bookmarks : {}", &user.name);
+            info!("get /bookmarks : {}", user.name);
             // search files
             let mut files_results = sqlite::bookmarks_for_user_id(user.id, &conn).await;
             files_results.sort();
@@ -134,7 +135,7 @@ async fn bookmarks_handler(auth_session: AuthSession, State(conn): State<Pool<Sq
 async fn search_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>, query: String) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
-            info!("get /search : {}", &query);
+            info!("get /search : {}", query);
             // body string is `query=search_string`, we need only the `search_string`
             let query = query.strip_prefix("query=").unwrap();
             let query = &query.replace('+', " ");
@@ -329,7 +330,7 @@ async fn cover_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite
 async fn download_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>, Path(file_id): Path<String>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
-            info!("get /download/{} : {}", &file_id, &user.name);
+            info!("get /download/{} : {}", file_id, user.name);
             let file = match sqlite::get_files_from_file_id(&file_id, &conn).await {
                 Some(file) => file,
                 None => FileInfo::new(),
@@ -347,7 +348,7 @@ async fn download_handler(auth_session: AuthSession, State(conn): State<Pool<Sql
                 (
                     StatusCode::OK,
                     [(header::CONTENT_TYPE, content_type), (header::CACHE_CONTROL, "no-cache")],
-                    [(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", &file.name))],
+                    [(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", file.name))],
                     file_content,
                 )
                     .into_response()
@@ -367,7 +368,7 @@ async fn comic_page_handler(
 ) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
-            info!("get /reader/{} (page {}) : {}", &file_id, &page, &user.name);
+            info!("get /reader/{} (page {}) : {}", file_id, page, user.name);
             let file = match sqlite::get_files_from_file_id(&file_id, &conn).await {
                 Some(file) => file,
                 None => FileInfo::new(),
@@ -381,7 +382,7 @@ async fn comic_page_handler(
                     .into_response(),
                 None => Html(html_render::simple_message(
                     "unable to get image",
-                    Some(&format!("/reader/{}", &file_id)),
+                    Some(&format!("/reader/{}", file_id)),
                 ))
                 .into_response(),
             }
@@ -399,7 +400,7 @@ async fn reader_handler(
     // let page: i32 = page.unwrap_or(0);
     match auth_session.user {
         Some(user) => {
-            info!("get /reader/{} (page {}) : {}", &file_id, &page, &user.name);
+            info!("get /reader/{} (page {}) : {}", file_id, page, user.name);
             let file = match sqlite::get_files_from_file_id(&file_id, &conn).await {
                 Some(file) => file,
                 None => FileInfo::new(),
@@ -427,7 +428,7 @@ async fn reader_handler(
                     Html(html_render::ebook_reader(&user, &file, &epub_reader, page)).into_response()
                 }
                 "pdf" => {
-                    let pdf_file = fs::read(format!("{}/{}", &file.parent_path, &file.name));
+                    let pdf_file = fs::read(format!("{}/{}", file.parent_path, file.name));
                     match pdf_file {
                         Ok(pdf_file) => (
                             StatusCode::OK,
@@ -436,7 +437,7 @@ async fn reader_handler(
                         )
                             .into_response(),
                         Err(e) => {
-                            warn!("pdf file {}/{} not found : {e}", &file.parent_path, &file.name);
+                            warn!("pdf file {}/{} not found : {e}", file.parent_path, file.name);
                             // TODO true 404
                             (StatusCode::NOT_FOUND, "file not found").into_response()
                         }
@@ -463,7 +464,7 @@ async fn reader_handler(
 async fn admin_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite>>) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
-            info!("get /admin : {}", &user.name);
+            info!("get /admin : {}", user.name);
             if user.role == Role::Admin {
                 // libraries
                 let library_list = sqlite::get_library(None, None, &conn).await;
@@ -484,7 +485,7 @@ async fn admin_handler(auth_session: AuthSession, State(conn): State<Pool<Sqlite
 async fn prefs_handler(auth_session: AuthSession) -> impl IntoResponse {
     match auth_session.user {
         Some(user) => {
-            info!("get /prefs : {}", &user.name);
+            info!("get /prefs : {}", user.name);
             Html(html_render::prefs(&user)).into_response()
         }
         None => unauthorized_response().into_response(),
@@ -605,7 +606,7 @@ async fn change_user_handler(
                         let check_user = sqlite::get_user(None, Some(&user_id), &conn).await;
                         if check_user.is_empty() {
                             Html(html_render::simple_message(
-                                &format!("user id {} does not exists", &user_id),
+                                &format!("user id {} does not exists", user_id),
                                 Some("/admin"),
                             ))
                             .into_response()
@@ -614,7 +615,7 @@ async fn change_user_handler(
                             if body.delete.is_some() && user_to_update.id != 1 {
                                 sqlite::delete_user(&user_to_update, &conn).await;
                                 Html(html_render::simple_message(
-                                    &format!("user {} deleted", &user_to_update.name),
+                                    &format!("user {} deleted", user_to_update.name),
                                     Some("/admin"),
                                 ))
                                 .into_response()
@@ -631,7 +632,7 @@ async fn change_user_handler(
                                 }
                                 sqlite::update_user(&user_to_update, &conn).await;
                                 Html(html_render::simple_message(
-                                    &format!("user {} updated", &user_to_update.name),
+                                    &format!("user {} updated", user_to_update.name),
                                     Some("/admin"),
                                 ))
                                 .into_response()
@@ -669,23 +670,23 @@ async fn admin_library_handler(
                     "delete" => {
                         // TODO handle library.first() like for `full_rescan`
                         let library = sqlite::get_library(None, Some(&library_id), &conn).await;
-                        info!("user [{}] asked for delete library [{}]", &user.name, &library[0].name);
+                        info!("user [{}] asked for delete library [{}]", user.name, library[0].name);
                         sqlite::delete_library_from_id(&library, &conn).await;
                         // TODO delete in tables `covers`, `directories` and `reading`
                         sqlite::delete_files_from_library(&library, &conn).await;
-                        info!("library [{}] deleted", &library[0].name);
+                        info!("library [{}] deleted", library[0].name);
                         Html(html_render::simple_message(
-                            &format!("delete lib id = {}", &library[0].name),
+                            &format!("delete lib id = {}", library[0].name),
                             Some("/admin"),
                         ))
                         .into_response()
                     }
                     "full_rescan" => match sqlite::get_library(None, Some(&library_id), &conn).await.first() {
                         Some(library) => {
-                            info!("user [{}] asked for a full rescan of library [{}]", &user.name, &library.name);
+                            info!("user [{}] asked for a full rescan of library [{}]", user.name, library.name);
                             scanner::launch_scan(library, &conn).await.ok();
                             Html(html_render::simple_message(
-                                &format!("library {} scanned (<a href=\"/admin\">return to admin panel</a>)", &library.name),
+                                &format!("library {} scanned (<a href=\"/admin\">return to admin panel</a>)", library.name),
                                 Some("/admin"),
                             ))
                             .into_response()
@@ -724,7 +725,7 @@ async fn library_handler(auth_session: AuthSession, State(conn): State<Pool<Sqli
                 Some(path) => format!("/{}", path.as_str()),
                 None => String::new(),
             };
-            info!("get /library{} : {}", &sub_path, &user.name);
+            info!("get /library{} : {}", sub_path, user.name);
 
             // if sub_path is empty : `/library` is called
             // we must print all libraries
@@ -828,7 +829,7 @@ async fn library_handler(auth_session: AuthSession, State(conn): State<Pool<Sqli
                 files_list_with_status.sort();
 
                 let mut directories_list: Vec<DirectoryInfo> = {
-                    info!("get /library{} : {}", &sub_path, &user.name);
+                    info!("get /library{} : {}", sub_path, user.name);
                     // TODO set limit in conf
                     let directories_list: Vec<DirectoryInfo> = match sqlx::query_as("SELECT * FROM directories WHERE parent_path = ?;")
                         .bind(&query_parent_path)
@@ -922,7 +923,7 @@ fn get_png(png_filename: &str) -> impl IntoResponse {
     }
 }
 async fn get_root_file(Path(path): Path<String>) -> impl IntoResponse {
-    info!("get /{}", &path);
+    info!("get /{}", path);
     match path.as_str() {
         "favicon.svgz" => get_svg("images/favicon.svgz").into_response(),
         "favicon-96x96.png" => get_png("images/favicon-96x96.png").into_response(),
@@ -998,7 +999,7 @@ fn create_css() -> String {
 
 /// serve css (custom file can be loaded)
 async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
-    info!("get /css/{}", &path);
+    info!("get /css/{}", path);
     // store css file in var
     let css = create_css();
     // return css if found
@@ -1030,7 +1031,7 @@ async fn get_css(Path(path): Path<String>) -> impl IntoResponse {
 /// serve fonts
 /// TODO see https://stackoverflow.com/questions/75065364/how-to-include-font-file-assets-folder-to-rust-binary ?
 async fn get_fonts(Path(path): Path<String>) -> impl IntoResponse {
-    info!("get /fonts/{}", &path);
+    info!("get /fonts/{}", path);
 
     // return font if found
     match path.as_str() {
@@ -1062,7 +1063,7 @@ async fn get_fonts(Path(path): Path<String>) -> impl IntoResponse {
 }
 
 async fn get_images(Path(path): Path<String>) -> impl IntoResponse {
-    info!("get /images/{}", &path);
+    info!("get /images/{}", path);
     // TODO include_bytes pour la base ? (cf monit-agregator)
     // read_to_string if svg instead of svgz
     // https://developer.mozilla.org/en-US/docs/Web/SVG/Tutorial/Getting_Started#a_word_on_web_servers_for_.svgz_files
